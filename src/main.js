@@ -5,6 +5,7 @@ import { Track } from './track.js';
 import { ObstacleManager } from './obstacles.js';
 import { PuzzleManager } from './puzzles.js';
 import { Sanctuary } from './sanctuary.js';
+import { ParticleSystem, SoundFXManager } from './effects.js';
 
 class Game {
     constructor() {
@@ -113,7 +114,7 @@ class Game {
     }
 
     /**
-     * Instantiate player, scrolling tracks, obstacles, and metagame managers.
+     * Instantiate player, scrolling tracks, obstacles, metagame managers, and juice systems.
      */
     initGameObjects() {
         this.track = new Track(this.scene);
@@ -122,11 +123,15 @@ class Game {
         this.puzzleManager = new PuzzleManager(this);
         this.sanctuary = new Sanctuary(this.scene);
 
+        // Juice systems: Particle explosion pools and sound effect synthesizers
+        this.particles = new ParticleSystem(this.scene);
+        this.sfx = new SoundFXManager();
+
         this.playerBox = new THREE.Box3();
     }
 
     /**
-     * Map swipes and keyboard codes to player movement.
+     * Map swipes and keyboard codes to player movement and play sounds.
      */
     initInput() {
         this.inputManager = new InputManager();
@@ -138,9 +143,15 @@ class Game {
             } else if (direction === 'right') {
                 this.player.moveRight();
             } else if (direction === 'up') {
-                this.player.jump();
+                if (!this.player.isJumping && !this.player.isSliding && !this.player.isFlying) {
+                    this.sfx.playJump();
+                    this.player.jump();
+                }
             } else if (direction === 'down') {
-                this.player.slide();
+                if (!this.player.isJumping && !this.player.isSliding && !this.player.isFlying) {
+                    this.sfx.playSlide();
+                    this.player.slide();
+                }
             }
         });
     }
@@ -173,6 +184,7 @@ class Game {
      * Triggers the camera transition.
      */
     triggerIntroTransition() {
+        const nickname = this.nicknameInput.value.trim() || 'Pilgrim';
         this.startScreen.classList.add('hidden');
         this.gameState = 'INTRO';
     }
@@ -190,6 +202,7 @@ class Game {
         this.nextFluteMilestone = 1200;
         this.sudarshanActive = false;
         
+        this.particles.reset();
         this.clock.getDelta();
         this.gameState = 'PLAYING';
     }
@@ -205,6 +218,7 @@ class Game {
         this.track.reset();
         this.obstacleManager.reset();
         this.puzzleManager.clearSudarshanPrompt();
+        this.particles.reset();
 
         this.camera.position.set(15.0, 3.0, -5.0);
         this.camera.lookAt(15.0, 0.8, -10.0);
@@ -284,6 +298,13 @@ class Game {
 
             this.sanctuary.restoreMonument(key);
             this.refreshSanctuaryUI();
+            this.sfx.playCollect(); // Success sound chime
+
+            // Spawn celebration particles at the monument's center
+            const offsetPos = this.sanctuary.meshGroup.position.clone().add(
+                this.sanctuary.monuments[key].mesh.position
+            );
+            this.particles.spawnBurst(offsetPos, 0xFFD700, 20); // Golden sparklers
 
             const banner = document.createElement('div');
             banner.className = 'puzzle-banner success';
@@ -291,6 +312,8 @@ class Game {
             document.body.appendChild(banner);
             setTimeout(() => banner.remove(), 2000);
         } else {
+            this.sfx.playCrash(); // Fail buzz
+
             const banner = document.createElement('div');
             banner.className = 'puzzle-banner failure';
             banner.innerText = `REQUIRES ${data.cost} MAKHAN POTS!`;
@@ -325,7 +348,10 @@ class Game {
             `;
 
             if (data.restored) {
-                card.addEventListener('click', () => this.openScrollReader(data.story));
+                card.addEventListener('click', () => {
+                    this.sfx.playCollect();
+                    this.openScrollReader(data.story);
+                });
             }
             listDiv.appendChild(card);
         });
@@ -372,6 +398,9 @@ class Game {
             this.obstacleManager.update(this.speed, deltaTime);
             this.player.update(deltaTime);
 
+            // Update active particles
+            this.particles.update(deltaTime);
+
             this.playerBox.setFromObject(this.player.meshGroup);
 
             // Coin collections
@@ -379,11 +408,24 @@ class Game {
             if (collectedCoins > 0) {
                 this.butter += collectedCoins;
                 this.score += collectedCoins * 100;
+                
+                this.sfx.playCollect();
+                
+                // Spawn golden sparkle particles at player position
+                const coinPos = this.player.meshGroup.position.clone();
+                coinPos.y += 0.4;
+                this.particles.spawnBurst(coinPos, 0xFFD700, 5);
             }
 
             // Powerup collections
             const powerup = this.obstacleManager.checkPowerUpCollections(this.playerBox);
             if (powerup) {
+                this.sfx.playCollect();
+                
+                const pupPos = this.player.meshGroup.position.clone();
+                pupPos.y += 0.5;
+                this.particles.spawnBurst(pupPos, 0x00FFFF, 12); // Cyan splash
+
                 if (powerup === 'chakra') {
                     this.player.activateShield(8.0);
                 } else if (powerup === 'feather') {
@@ -414,6 +456,7 @@ class Game {
             this.camera.lookAt(15.0, 0.8, -10.0);
             
             this.sanctuary.update(deltaTime);
+            this.particles.update(deltaTime);
         } else if (this.gameState === 'INTRO') {
             this.camera.position.lerp(this.introCamTargetPos, deltaTime * 3.5);
             
@@ -462,10 +505,17 @@ class Game {
             this.sudarshanActive = false;
             this.puzzleManager.clearSudarshanPrompt();
 
+            const gatePos = obstacle.mesh.position.clone();
+            gatePos.y += 1.8;
+
             if (obstacle.glyph === this.targetGlyph) {
                 console.log("[Sudarshan Gate] Correct Gate Solved! Speed Boost.");
                 this.score += 250;
                 this.speed = Math.min(this.speed + 4.0, this.maxSpeed);
+                this.sfx.playCollect();
+
+                // Spark green success particles
+                this.particles.spawnBurst(gatePos, 0x4CAF50, 16);
 
                 const banner = document.createElement('div');
                 banner.className = 'puzzle-banner success';
@@ -476,6 +526,10 @@ class Game {
                 console.log("[Sudarshan Gate] Incorrect Gate. Speed Slow Penalty.");
                 this.score = Math.max(this.score - 100, 0);
                 this.speed = Math.max(this.speed - 5.0, this.baseSpeed);
+                this.sfx.playCrash();
+
+                // Spark red warning particles
+                this.particles.spawnBurst(gatePos, 0xF44336, 12);
 
                 const banner = document.createElement('div');
                 banner.className = 'puzzle-banner failure';
@@ -487,12 +541,19 @@ class Game {
             this.obstacleManager.obstacles = this.obstacleManager.obstacles.filter(obs => obs.type !== 'sudarshan_gate');
             obstacle.destroy();
         } else {
+            const crashPos = this.player.meshGroup.position.clone();
+            crashPos.y += 0.8;
+
             if (this.player.isShielded) {
                 console.log("[Collision] Shield absorbed obstacle collision.");
                 
                 this.player.isShielded = false;
                 this.player.shieldMesh.visible = false;
                 this.player.shieldTimer = 0;
+
+                // Gold shield break sparks
+                this.sfx.playCrash();
+                this.particles.spawnBurst(crashPos, 0xFFD700, 18);
 
                 this.obstacleManager.obstacles = this.obstacleManager.obstacles.filter(o => o !== obstacle);
                 obstacle.destroy();
@@ -504,6 +565,12 @@ class Game {
                 setTimeout(() => banner.remove(), 1500);
             } else {
                 console.log("[Collision] Player crashed!");
+                this.sfx.playCrash();
+                
+                // Explode player into blue/gold sparkles
+                this.particles.spawnBurst(crashPos, 0x3A9EDB, 20); // Blue sparks
+                this.particles.spawnBurst(crashPos, 0xECC81A, 15); // Yellow sparks
+                
                 this.gameOver();
             }
         }
