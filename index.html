@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Leela: Chronicles of Bharat</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- WebGL Canvas Container -->
+    <div id="game-container"></div>
+
+    <!-- DOM UI Overlay -->
+    <div id="ui-layer">
+        <!-- Start/Title Screen Overlay -->
+        <div id="start-screen" class="overlay-panel">
+            <h1 class="title">LEELA</h1>
+            <h3 class="subtitle">Chronicles of Bharat</h3>
+            <p class="description">Scan to Play. Tap Start to Run.</p>
+            <div class="input-group">
+                <input type="text" id="nickname-input" placeholder="Enter Nickname" maxlength="12">
+            </div>
+            <button id="start-button">START RUN</button>
+            <div class="instructions">
+                <p><strong>Controls:</strong> Arrow Keys / WASD (PC) or Swipe Gestures (Mobile)</p>
+            </div>
+        </div>
+
+        <!-- In-Game HUD -->
+        <div id="hud" class="hidden">
+            <div class="hud-item score-container">
+                <span class="hud-label">SCORE:</span>
+                <span id="score-val" class="hud-value">0</span>
+            </div>
+            <div class="hud-item butter-container">
+                <span class="hud-label">MAKHAN:</span>
+                <span id="butter-val" class="hud-value">0</span>
+            </div>
+        </div>
+
+        <!-- Game Over Overlay -->
+        <div id="gameover-screen" class="overlay-panel hidden">
+            <h2 class="alert-title">RUN COMPLETED</h2>
+            <p>Your devotion score is recorded!</p>
+            <div class="stat-row">
+                <span>Final Score:</span>
+                <span id="final-score" class="stat-val">0</span>
+            </div>
+            <div class="stat-row">
+                <span>Makhan Collected:</span>
+                <span id="final-butter" class="stat-val">0</span>
+            </div>
+            <button id="restart-button">RUN AGAIN</button>
+        </div>
+    </div>
+
+    <!-- Import Main Game Logic -->
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>
