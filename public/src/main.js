@@ -58,24 +58,26 @@ class Game {
         this.introCamTargetPos = new THREE.Vector3(0, 3.5, 5.0);
         this.introCamTargetLook = new THREE.Vector3(0, 1.2, -5.0);
 
-        // 1. Establish single AudioContext for all audio synthesis (BUG-005 Fix)
+        // AAA Camera Shake Properties
+        this.shakeIntensity = 0.0;
+        this.shakeDecay = 4.0; // Decay rate per second
+
+        // Establish single AudioContext (BUG-005 Fix)
         this.audioCtx = null;
         try {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             this.audioCtx = new AudioContext();
         } catch (e) {
-            console.warn("Web Audio Context not supported in this browser.");
+            console.warn("Web Audio Context not supported.");
         }
 
-        // 2. Establish Event WebSocket connections (Fail-Soft if server is offline)
+        // Establish Event WebSocket connection (with offline fallback)
         this.socket = null;
         if (typeof io !== 'undefined') {
             this.socket = io();
             this.socket.on('connect', () => console.log('[Socket] Synchronized with local scoreboard server.'));
             this.socket.on('submission_rejected', (data) => {
                 console.warn(`[Socket] Submission rejected: ${data.reason}`);
-                
-                // Show a quick warning banner to the user
                 const banner = document.createElement('div');
                 banner.className = 'puzzle-banner failure';
                 banner.innerText = `INTEGRITY CHECK REJECTED`;
@@ -113,8 +115,9 @@ class Game {
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.container.appendChild(this.renderer.domElement);
 
-        const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.45);
-        this.scene.add(ambientLight);
+        // Soft sky lighting & warm orange ground bounce (AAA visual ambient glow)
+        const hemiLight = new THREE.HemisphereLight(0xB1E1FF, 0xB97A20, 0.5);
+        this.scene.add(hemiLight);
 
         this.sunLight = new THREE.DirectionalLight(0xFFFFFF, 0.7);
         this.sunLight.position.set(5, 12, 3);
@@ -138,7 +141,6 @@ class Game {
         this.player = new Player(this.scene);
         this.obstacleManager = new ObstacleManager(this.scene);
         
-        // Pass central audio context
         this.puzzleManager = new PuzzleManager(this, this.audioCtx);
         this.sanctuary = new Sanctuary(this.scene);
 
@@ -149,7 +151,7 @@ class Game {
     }
 
     /**
-     * Map swipes and keyboard codes to player movement.
+     * Map controls to player movement.
      */
     initInput() {
         this.inputManager = new InputManager();
@@ -199,6 +201,14 @@ class Game {
     }
 
     /**
+     * Helper to initiate high frequency camera shakes.
+     * @param {number} intensity - Amplitude scaling factor.
+     */
+    triggerCameraShake(intensity) {
+        this.shakeIntensity = intensity;
+    }
+
+    /**
      * Triggers camera intro transition.
      */
     triggerIntroTransition() {
@@ -219,7 +229,6 @@ class Game {
         this.nextFluteMilestone = 1200;
         this.sudarshanActive = false;
         
-        // Notify server that the run has started (Anti-Cheat start trigger)
         if (this.socket) {
             this.socket.emit('start_run');
             console.log('[Socket] start_run signal emitted to server.');
@@ -242,6 +251,10 @@ class Game {
         this.obstacleManager.reset();
         this.puzzleManager.clearSudarshanPrompt();
         this.particles.reset();
+
+        // Restore default camera configuration
+        this.camera.fov = 60;
+        this.camera.updateProjectionMatrix();
 
         this.camera.position.set(15.0, 3.0, -5.0);
         this.camera.lookAt(15.0, 0.8, -10.0);
@@ -415,13 +428,13 @@ class Game {
             this.player.update(deltaTime);
             this.particles.update(deltaTime);
 
-            // BUG-004 Fix: Force manual coordinates synchronization of world matrix bounds before setFromObject
+            // Force world coordinate updates
             this.player.meshGroup.updateMatrixWorld(true);
             this.obstacleManager.obstacles.forEach(obs => obs.mesh.updateMatrixWorld(true));
             this.obstacleManager.coins.forEach(coin => coin.mesh.updateMatrixWorld(true));
             this.obstacleManager.powerups.forEach(p => p.mesh.updateMatrixWorld(true));
 
-            // Compute player bounding box using accurate updated world matrices
+            // Compute player bounding box
             this.playerBox.setFromObject(this.player.meshGroup);
 
             // Coin collections
@@ -432,6 +445,7 @@ class Game {
                 
                 this.sfx.playCollect();
                 
+                // Spawn golden sparkle particles
                 const coinPos = this.player.meshGroup.position.clone();
                 coinPos.y += 0.4;
                 this.particles.spawnBurst(coinPos, 0xFFD700, 5);
@@ -441,6 +455,7 @@ class Game {
             const powerup = this.obstacleManager.checkPowerUpCollections(this.playerBox);
             if (powerup) {
                 this.sfx.playCollect();
+                this.triggerCameraShake(0.15); // Collect shake
                 
                 const pupPos = this.player.meshGroup.position.clone();
                 pupPos.y += 0.5;
@@ -520,7 +535,7 @@ class Game {
     }
 
     /**
-     * Core collision evaluation logic.
+     * Core collision evaluation logic with Camera Shake.
      */
     handleCollision(obstacle) {
         if (obstacle.type === 'sudarshan_gate') {
@@ -536,6 +551,7 @@ class Game {
                 this.speed = Math.min(this.speed + 4.0, this.maxSpeed);
                 this.sfx.playCollect();
 
+                this.triggerCameraShake(0.12); // Correct gate micro-shake
                 this.particles.spawnBurst(gatePos, 0x4CAF50, 16);
 
                 const banner = document.createElement('div');
@@ -549,6 +565,7 @@ class Game {
                 this.speed = Math.max(this.speed - 5.0, this.baseSpeed);
                 this.sfx.playCrash();
 
+                this.triggerCameraShake(0.25); // Wrong gate shake
                 this.particles.spawnBurst(gatePos, 0xF44336, 12);
 
                 const banner = document.createElement('div');
@@ -572,6 +589,7 @@ class Game {
                 this.player.shieldTimer = 0;
 
                 this.sfx.playCrash();
+                this.triggerCameraShake(0.35); // Shield absorb vibration
                 this.particles.spawnBurst(crashPos, 0xFFD700, 18);
 
                 this.obstacleManager.obstacles = this.obstacleManager.obstacles.filter(o => o !== obstacle);
@@ -585,7 +603,8 @@ class Game {
             } else {
                 console.log("[Collision] Player crashed!");
                 this.sfx.playCrash();
-                
+                this.triggerCameraShake(0.65); // High impact crash shake
+
                 this.particles.spawnBurst(crashPos, 0x3A9EDB, 20);
                 this.particles.spawnBurst(crashPos, 0xECC81A, 15);
                 
@@ -595,7 +614,7 @@ class Game {
     }
 
     /**
-     * Camera interpolator.
+     * Camera interpolator with dynamic FOV speed tunnel and high frequency shake.
      */
     updateCamera(deltaTime) {
         let targetCamY = 3.5;
@@ -606,9 +625,29 @@ class Game {
             targetCamZ = 7.5;
         }
 
+        // 1. Interpolate position coordinates
         this.camera.position.y += (targetCamY - this.camera.position.y) * 3.0 * deltaTime;
         this.camera.position.z += (targetCamZ - this.camera.position.z) * 3.0 * deltaTime;
         this.camera.lookAt(this.player.meshGroup.position.x, this.player.posY + 1.2, -5.0);
+
+        // 2. AAA speed trail Dynamic FOV (Widen from 60 to 75 degrees)
+        const targetFOV = this.player.isFlying ? 72 : 60 + (this.speed - this.baseSpeed) * 0.8;
+        this.camera.fov += (targetFOV - this.camera.fov) * 5.0 * deltaTime;
+        this.camera.updateProjectionMatrix();
+
+        // 3. Apply Camera Shake displacement
+        if (this.shakeIntensity > 0.01) {
+            const offsetX = (Math.random() - 0.5) * this.shakeIntensity;
+            const offsetY = (Math.random() - 0.5) * this.shakeIntensity;
+            
+            this.camera.position.x += offsetX;
+            this.camera.position.y += offsetY;
+            
+            // Decelerate shake
+            this.shakeIntensity -= this.shakeDecay * deltaTime;
+        } else {
+            this.shakeIntensity = 0.0;
+        }
     }
 
     /**
