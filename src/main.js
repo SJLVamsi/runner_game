@@ -4,12 +4,13 @@ import { Player } from './player.js';
 import { Track } from './track.js';
 import { ObstacleManager } from './obstacles.js';
 import { PuzzleManager } from './puzzles.js';
+import { Sanctuary } from './sanctuary.js';
 
 class Game {
     constructor() {
         this.container = document.getElementById('game-container');
         
-        // Game states: 'START', 'PLAYING', 'GAMEOVER', 'PUZZLE'
+        // Game states: 'START', 'INTRO', 'PLAYING', 'GAMEOVER', 'PUZZLE'
         this.gameState = 'START';
 
         // Timing properties
@@ -18,16 +19,27 @@ class Game {
         this.baseSpeed = 12.0;
         this.maxSpeed = 28.0;
 
-        // UI references
+        // UI Panel references
         this.startScreen = document.getElementById('start-screen');
         this.hud = document.getElementById('hud');
         this.gameoverScreen = document.getElementById('gameover-screen');
+        this.sanctuaryPanel = document.getElementById('sanctuary-panel');
+        this.scrollsPanel = document.getElementById('scrolls-panel');
+        this.scrollReader = document.getElementById('scroll-reader');
+
+        // Buttons
         this.startButton = document.getElementById('start-button');
         this.restartButton = document.getElementById('restart-button');
+        this.sanctuaryButton = document.getElementById('sanctuary-btn');
+        this.scrollsButton = document.getElementById('scrolls-btn');
+        this.closeSanctuaryButton = document.getElementById('close-sanctuary');
+        this.closeScrollsButton = document.getElementById('close-scrolls');
+        this.closeReaderButton = document.getElementById('close-reader');
+
         this.nicknameInput = document.getElementById('nickname-input');
-        
         this.scoreVal = document.getElementById('score-val');
         this.butterVal = document.getElementById('butter-val');
+        this.sancButterVal = document.getElementById('sanc-butter-val');
         this.finalScore = document.getElementById('final-score');
         this.finalButter = document.getElementById('final-butter');
 
@@ -35,11 +47,15 @@ class Game {
         this.score = 0;
         this.butter = 0;
 
-        // Trigger milestones
+        // Milestones
         this.nextSudarshanMilestone = 500;
         this.nextFluteMilestone = 1200;
         this.sudarshanActive = false;
         this.targetGlyph = "";
+
+        // Intro Camera properties
+        this.introCamTargetPos = new THREE.Vector3(0, 3.5, 5.0);
+        this.introCamTargetLook = new THREE.Vector3(0, 1.2, -5.0);
 
         this.initThreeJS();
         this.initGameObjects();
@@ -59,8 +75,10 @@ class Game {
         this.scene.fog = new THREE.FogExp2(0xF4EBD0, 0.015);
 
         this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-        this.camera.position.set(0, 3.5, 5.0);
-        this.camera.lookAt(0, 1.2, -5.0);
+        
+        // Starting position near Sanctuary
+        this.camera.position.set(15.0, 3.0, -5.0);
+        this.camera.lookAt(15.0, 0.8, -10.0);
 
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -86,15 +104,16 @@ class Game {
     }
 
     /**
-     * Instantiate player, scrolling tracks, obstacles, and the puzzle manager.
+     * Instantiate player, scrolling tracks, obstacles, and metagame managers.
      */
     initGameObjects() {
         this.track = new Track(this.scene);
         this.player = new Player(this.scene);
         this.obstacleManager = new ObstacleManager(this.scene);
-        
-        // Puzzle System
         this.puzzleManager = new PuzzleManager(this);
+        
+        // 3D Sanctuary Metagame
+        this.sanctuary = new Sanctuary(this.scene);
 
         this.playerBox = new THREE.Box3();
     }
@@ -123,20 +142,42 @@ class Game {
      * Bind DOM button events.
      */
     bindEvents() {
-        this.startButton.addEventListener('click', () => this.startGame());
+        this.startButton.addEventListener('click', () => this.triggerIntroTransition());
         this.restartButton.addEventListener('click', () => this.restartGame());
+        
+        // Sanctuary dashboard triggers
+        this.sanctuaryButton.addEventListener('click', () => this.openSanctuaryDashboard());
+        this.closeSanctuaryButton.addEventListener('click', () => this.closeSanctuaryDashboard());
+        
+        // Scrolls library triggers
+        this.scrollsButton.addEventListener('click', () => this.openScrollsLibrary());
+        this.closeScrollsButton.addEventListener('click', () => this.closeScrollsLibrary());
+        this.closeReaderButton.addEventListener('click', () => this.closeScrollReader());
+
+        // Bind restore buttons
+        this.sanctuaryPanel.querySelectorAll('.restore-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const key = e.target.getAttribute('data-key');
+                this.attemptMonumentRestoration(key);
+            });
+        });
 
         window.addEventListener('resize', () => this.onWindowResize());
     }
 
     /**
-     * Transition from Menu to Active run.
+     * Triggers the camera transition from Sanctuary garden to running track.
+     */
+    triggerIntroTransition() {
+        const nickname = this.nicknameInput.value.trim() || 'Pilgrim';
+        this.startScreen.classList.add('hidden');
+        this.gameState = 'INTRO';
+    }
+
+    /**
+     * Start the runner mechanics.
      */
     startGame() {
-        const nickname = this.nicknameInput.value.trim() || 'Pilgrim';
-        console.log(`Starting run for player: ${nickname}`);
-
-        this.startScreen.classList.add('hidden');
         this.hud.classList.remove('hidden');
         
         this.score = 0;
@@ -145,33 +186,28 @@ class Game {
         this.nextSudarshanMilestone = 500;
         this.nextFluteMilestone = 1200;
         this.sudarshanActive = false;
-        this.puzzleManager.clearSudarshanPrompt();
         
         this.clock.getDelta();
         this.gameState = 'PLAYING';
     }
 
     /**
-     * Transition from Game Over back to Active run.
+     * Transition from Game Over back to Menu.
      */
     restartGame() {
         this.gameoverScreen.classList.add('hidden');
-        this.hud.classList.remove('hidden');
+        this.startScreen.classList.remove('hidden');
         
         this.player.reset();
         this.track.reset();
         this.obstacleManager.reset();
         this.puzzleManager.clearSudarshanPrompt();
 
-        this.score = 0;
-        this.butter = 0;
-        this.speed = this.baseSpeed;
-        this.nextSudarshanMilestone = 500;
-        this.nextFluteMilestone = 1200;
-        this.sudarshanActive = false;
-        
-        this.clock.getDelta();
-        this.gameState = 'PLAYING';
+        // Snap camera back to menu viewpoint
+        this.camera.position.set(15.0, 3.0, -5.0);
+        this.camera.lookAt(15.0, 0.8, -10.0);
+
+        this.gameState = 'START';
     }
 
     /**
@@ -191,77 +227,219 @@ class Game {
         this.pushScoreToEventLeaderboard();
     }
 
-    /**
-     * Handle viewport changes.
-     */
+    /* =========================================================================
+       SANCTUARY METAGAME & PROGRESS FUNCTIONS
+       ========================================================================= */
+
+    openSanctuaryDashboard() {
+        this.startScreen.classList.add('hidden');
+        this.sanctuaryPanel.classList.remove('hidden');
+        
+        this.refreshSanctuaryUI();
+    }
+
+    closeSanctuaryDashboard() {
+        this.sanctuaryPanel.classList.add('hidden');
+        this.startScreen.classList.remove('hidden');
+    }
+
+    refreshSanctuaryUI() {
+        // Fetch current savings
+        const totalButter = parseInt(localStorage.getItem('leela_totalbutter') || '0', 10);
+        this.sancButterVal.innerText = totalButter;
+
+        // Refresh monument cards
+        Object.keys(this.sanctuary.monuments).forEach(key => {
+            const data = this.sanctuary.monuments[key];
+            const card = document.getElementById(`card-${key}`);
+            const statusSpan = card.querySelector('.mon-status');
+            const restoreBtn = card.querySelector('.restore-btn');
+
+            if (data.restored) {
+                statusSpan.innerText = "RESTORED";
+                statusSpan.className = "mon-status text-unlocked";
+                restoreBtn.classList.add('hidden');
+            } else {
+                statusSpan.innerText = "RUINED";
+                statusSpan.className = "mon-status text-locked";
+                restoreBtn.classList.remove('hidden');
+                
+                // Dim button if player doesn't have enough money
+                if (totalButter < data.cost) {
+                    restoreBtn.style.opacity = '0.5';
+                } else {
+                    restoreBtn.style.opacity = '1.0';
+                }
+            }
+        });
+    }
+
+    attemptMonumentRestoration(key) {
+        const data = this.sanctuary.monuments[key];
+        if (!data || data.restored) return;
+
+        const totalButter = parseInt(localStorage.getItem('leela_totalbutter') || '0', 10);
+        
+        if (totalButter >= data.cost) {
+            // Deduct cost and save
+            const newTotal = totalButter - data.cost;
+            localStorage.setItem('leela_totalbutter', newTotal.toString());
+
+            // Trigger visual diorama restore
+            this.sanctuary.restoreMonument(key);
+            
+            // Refresh card display
+            this.refreshSanctuaryUI();
+
+            // Overlay banner
+            const banner = document.createElement('div');
+            banner.className = 'puzzle-banner success';
+            banner.innerText = `${data.name.toUpperCase()} RESTORED!`;
+            document.body.appendChild(banner);
+            setTimeout(() => banner.remove(), 2000);
+        } else {
+            // Alert user of insufficient funds
+            const banner = document.createElement('div');
+            banner.className = 'puzzle-banner failure';
+            banner.innerText = `REQUIRES ${data.cost} MAKHAN POTS!`;
+            document.body.appendChild(banner);
+            setTimeout(() => banner.remove(), 1800);
+        }
+    }
+
+    /* =========================================================================
+       SCROLLS LIBRARY & READER FUNCTIONS
+       ========================================================================= */
+
+    openScrollsLibrary() {
+        this.startScreen.classList.add('hidden');
+        this.scrollsPanel.classList.remove('hidden');
+
+        // Dynamically build grid of scrolls
+        const listDiv = document.getElementById('scrolls-list');
+        listDiv.innerHTML = ''; // Clear
+
+        Object.keys(this.sanctuary.monuments).forEach(key => {
+            const data = this.sanctuary.monuments[key];
+            
+            const card = document.createElement('div');
+            card.className = data.restored ? 'scroll-card' : 'scroll-card locked';
+            
+            card.innerHTML = `
+                <div class="scroll-icon">${data.restored ? '📜' : '🔒'}</div>
+                <div class="scroll-title">${data.restored ? data.story.title : 'Locked Memory'}</div>
+                <div class="scroll-subtitle" style="font-size:0.7rem;color:#888;">
+                    ${data.restored ? 'Tap to read' : `Restore ${data.name}`}
+                </div>
+            `;
+
+            if (data.restored) {
+                card.addEventListener('click', () => this.openScrollReader(data.story));
+            }
+            listDiv.appendChild(card);
+        });
+    }
+
+    closeScrollsLibrary() {
+        this.scrollsPanel.classList.add('hidden');
+        this.startScreen.classList.remove('hidden');
+    }
+
+    openScrollReader(storyData) {
+        this.scrollsPanel.classList.add('hidden');
+        this.scrollReader.classList.remove('hidden');
+
+        document.getElementById('reader-title').innerText = storyData.title;
+        document.getElementById('reader-text').innerText = storyData.text;
+        document.getElementById('reader-moral').innerText = storyData.moral;
+    }
+
+    closeScrollReader() {
+        this.scrollReader.classList.add('hidden');
+        this.scrollsPanel.classList.remove('hidden');
+    }
+
+    /* =========================================================================
+       CORE ENGINE GAME TICK UPDATES
+       ========================================================================= */
+
     onWindowResize() {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
-    /**
-     * Core WebGL Frame Loop.
-     */
     animate() {
         requestAnimationFrame(() => this.animate());
 
         const deltaTime = Math.min(this.clock.getDelta(), 0.1);
 
         if (this.gameState === 'PLAYING') {
-            // 1. Gradually accelerate game speed
             this.speed = Math.min(this.speed + deltaTime * 0.12, this.maxSpeed);
 
-            // 2. Update track scroll
             this.track.update(this.speed, deltaTime);
-
-            // 3. Spawn and move obstacles/coins/powerups
             this.obstacleManager.update(this.speed, deltaTime);
-
-            // 4. Update player physics and animations
             this.player.update(deltaTime);
 
-            // 5. Calculate player bounding box
             this.playerBox.setFromObject(this.player.meshGroup);
 
-            // 6. Check for coin collections
+            // Coin collections
             const collectedCoins = this.obstacleManager.checkCoinCollections(this.playerBox);
             if (collectedCoins > 0) {
                 this.butter += collectedCoins;
                 this.score += collectedCoins * 100;
             }
 
-            // 7. Check for power-up collections
+            // Powerup collections
             const powerup = this.obstacleManager.checkPowerUpCollections(this.playerBox);
             if (powerup) {
                 if (powerup === 'chakra') {
-                    this.player.activateShield(8.0); // Invincible shield
+                    this.player.activateShield(8.0);
                 } else if (powerup === 'feather') {
-                    this.player.activateFlight(6.0); // Flying feathers
-                    // Spawn a trail of coins in the sky
+                    this.player.activateFlight(6.0);
                     this.obstacleManager.spawnSkyCoins(this.player.meshGroup.position.z - 5.0);
                 }
             }
 
-            // 8. Update passive running score over time
             this.score += deltaTime * 15.0;
             this.updateHUD();
 
-            // 9. Check for educational milestones
             this.checkMilestones();
 
-            // 10. Check for obstacle collisions
             const collidedObstacle = this.obstacleManager.checkCollision(this.playerBox);
             if (collidedObstacle) {
                 this.handleCollision(collidedObstacle);
             }
 
-            // 11. Camera interpolation based on state (Zoom out if flying)
             this.updateCamera(deltaTime);
 
         } else if (this.gameState === 'START') {
-            this.camera.position.x = Math.sin(Date.now() * 0.0005) * 0.6;
-            this.camera.lookAt(0, 1.2, -5.0);
+            // Orbit camera slowly around the 3D Sanctuary garden (Center X=15, Y=0, Z=-10)
+            const time = Date.now() * 0.0003;
+            this.camera.position.set(
+                15.0 + Math.sin(time) * 6.5,
+                3.2,
+                -10.0 + Math.cos(time) * 6.5
+            );
+            this.camera.lookAt(15.0, 0.8, -10.0);
+            
+            // Keep Sanctuary animations (such as diorama restorations) ticking on menu
+            this.sanctuary.update(deltaTime);
+        } else if (this.gameState === 'INTRO') {
+            // Smoothly translate camera from the Sanctuary menu to the runner track position (0, 3.5, 5)
+            this.camera.position.lerp(this.introCamTargetPos, deltaTime * 3.5);
+            
+            // Calculate a moving lookTarget to slide the camera's focus smoothly to the track
+            const currentLook = new THREE.Vector3(15.0, 0.8, -10.0);
+            currentLook.lerp(this.introCamTargetLook, deltaTime * 3.5);
+            this.camera.lookAt(currentLook);
+
+            // Once camera slides close to position, trigger start run
+            if (this.camera.position.distanceTo(this.introCamTargetPos) < 0.1) {
+                this.camera.position.copy(this.introCamTargetPos);
+                this.camera.lookAt(this.introCamTargetLook);
+                this.startGame();
+            }
         }
 
         // Render Frame
@@ -272,25 +450,19 @@ class Game {
      * Checks score thresholds to trigger puzzles.
      */
     checkMilestones() {
-        // A. Trigger Sudarshan Gate Challenge
         if (this.score >= this.nextSudarshanMilestone && !this.sudarshanActive) {
             this.sudarshanActive = true;
-            this.nextSudarshanMilestone += 1000; // Schedule next gate run
+            this.nextSudarshanMilestone += 1000;
             
-            // Set up HUD prompt and spawn gates
             this.targetGlyph = this.puzzleManager.generateSudarshanPrompt();
             this.obstacleManager.spawnSudarshanGates(this.targetGlyph);
-            console.log(`[Sudarshan Gate] Spawning arches for: ${this.targetGlyph}`);
         }
 
-        // B. Trigger Flute Meditation Puzzle
         if (this.score >= this.nextFluteMilestone) {
-            this.nextFluteMilestone += 1200; // Schedule next meditation
+            this.nextFluteMilestone += 1200;
             this.puzzleManager.triggerFlutePuzzle();
-            console.log(`[Flute Meditation] Pausing runner to trigger memory puzzle.`);
         }
 
-        // C. Dynamic theme progression
         if (this.score >= 800) {
             this.track.setTheme('gokul');
         }
@@ -304,12 +476,9 @@ class Game {
             this.sudarshanActive = false;
             this.puzzleManager.clearSudarshanPrompt();
 
-            // Check if player navigated through the correct Sanskrit glyph gate
             if (obstacle.glyph === this.targetGlyph) {
                 console.log("[Sudarshan Gate] Correct Gate Solved! Speed Boost.");
                 this.score += 250;
-                
-                // Temporary speed boost spark
                 this.speed = Math.min(this.speed + 4.0, this.maxSpeed);
 
                 const banner = document.createElement('div');
@@ -320,7 +489,7 @@ class Game {
             } else {
                 console.log("[Sudarshan Gate] Incorrect Gate. Speed Slow Penalty.");
                 this.score = Math.max(this.score - 100, 0);
-                this.speed = Math.max(this.speed - 5.0, this.baseSpeed); // Penalty
+                this.speed = Math.max(this.speed - 5.0, this.baseSpeed);
 
                 const banner = document.createElement('div');
                 banner.className = 'puzzle-banner failure';
@@ -329,21 +498,16 @@ class Game {
                 setTimeout(() => banner.remove(), 1800);
             }
 
-            // Remove the triggered gates immediately so player doesn't collide with remaining gates in the row
             this.obstacleManager.obstacles = this.obstacleManager.obstacles.filter(obs => obs.type !== 'sudarshan_gate');
             obstacle.destroy();
         } else {
-            // Standard Obstacles: logs and floral garlands
             if (this.player.isShielded) {
-                // Shield absorbs collision
                 console.log("[Collision] Shield absorbed obstacle collision.");
                 
-                // Play splash effect and consume shield
                 this.player.isShielded = false;
                 this.player.shieldMesh.visible = false;
                 this.player.shieldTimer = 0;
 
-                // Remove obstacle
                 this.obstacleManager.obstacles = this.obstacleManager.obstacles.filter(o => o !== obstacle);
                 obstacle.destroy();
 
@@ -353,7 +517,6 @@ class Game {
                 document.body.appendChild(banner);
                 setTimeout(() => banner.remove(), 1500);
             } else {
-                // Crash!
                 console.log("[Collision] Player crashed!");
                 this.gameOver();
             }
@@ -368,7 +531,6 @@ class Game {
         let targetCamZ = 5.0;
 
         if (this.player.isFlying) {
-            // Elevate camera to track player in the sky
             targetCamY = 9.0;
             targetCamZ = 7.5;
         }

@@ -21,9 +21,78 @@
                 <input type="text" id="nickname-input" placeholder="Enter Nickname" maxlength="12">
             </div>
             <button id="start-button">START RUN</button>
+            <div class="menu-tabs">
+                <button id="sanctuary-btn" class="tab-btn">MY SANCTUARY</button>
+                <button id="scrolls-btn" class="tab-btn">STORY SCROLLS</button>
+            </div>
             <div class="instructions">
                 <p><strong>Controls:</strong> Arrow Keys / WASD (PC) or Swipe Gestures (Mobile)</p>
             </div>
+        </div>
+
+        <!-- Sanctuary Restoration Dashboard -->
+        <div id="sanctuary-panel" class="overlay-panel hidden">
+            <h2 class="panel-title">HERITAGE SANCTUARY</h2>
+            <p class="panel-desc">Spend gathered Makhan to restore ancient monuments!</p>
+            
+            <div class="currency-display">
+                <span>LIFETIME MAKHAN:</span>
+                <span id="sanc-butter-val" class="highlight-val">0</span>
+            </div>
+
+            <div class="monument-list">
+                <!-- Gokul Hut -->
+                <div class="monument-card" id="card-gokul_hut">
+                    <div class="mon-info">
+                        <strong class="mon-name">Gokul Cowherd Hut</strong>
+                        <span class="mon-status text-unlocked">Restored</span>
+                    </div>
+                    <button class="restore-btn" data-key="gokul_hut">Restore (5 Pots)</button>
+                </div>
+                <!-- Kesi Ghat -->
+                <div class="monument-card" id="card-kesi_ghat">
+                    <div class="mon-info">
+                        <strong class="mon-name">Kesi Ghat Steps</strong>
+                        <span class="mon-status text-locked">Ruined</span>
+                    </div>
+                    <button class="restore-btn" data-key="kesi_ghat">Restore (12 Pots)</button>
+                </div>
+                <!-- Dwarka Gate -->
+                <div class="monument-card" id="card-dwarka_gate">
+                    <div class="mon-info">
+                        <strong class="mon-name">Dwarka Golden Gate</strong>
+                        <span class="mon-status text-locked">Ruined</span>
+                    </div>
+                    <button class="restore-btn" data-key="dwarka_gate">Restore (20 Pots)</button>
+                </div>
+            </div>
+
+            <button id="close-sanctuary" class="back-btn">BACK TO MENU</button>
+        </div>
+
+        <!-- Story Scrolls Library Panel -->
+        <div id="scrolls-panel" class="overlay-panel hidden">
+            <h2 class="panel-title">STORY SCROLLS</h2>
+            <p class="panel-desc">Unlocked memories of Lord Krishna's Leelas</p>
+            
+            <div id="scrolls-list" class="scrolls-grid">
+                <!-- Populated dynamically via JS -->
+            </div>
+
+            <button id="close-scrolls" class="back-btn">BACK TO MENU</button>
+        </div>
+
+        <!-- Story Scroll Reader Card -->
+        <div id="scroll-reader" class="overlay-panel hidden">
+            <h2 id="reader-title" class="reader-header">Story Title</h2>
+            <div class="scroll-scrollbox">
+                <p id="reader-text" class="reader-body">Story content...</p>
+                <div class="moral-box">
+                    <strong>MEMORIES MORAL:</strong>
+                    <p id="reader-moral">Moral text...</p>
+                </div>
+            </div>
+            <button id="close-reader" class="back-btn">CLOSE SCROLL</button>
         </div>
 
         <!-- In-Game HUD -->

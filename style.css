@@ -57,16 +57,19 @@ html, body {
     left: 50%;
     transform: translate(-50%, -50%);
     width: 90%;
-    max-width: 400px;
-    background: rgba(18, 18, 18, 0.95);
+    max-width: 420px;
+    background: rgba(18, 18, 18, 0.96);
     border: 3px solid var(--color-saffron);
     border-radius: 16px;
-    padding: 30px;
+    padding: 25px;
     text-align: center;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     pointer-events: auto; /* Re-enable clicks for menus */
     color: var(--color-ivory);
     transition: opacity 0.3s ease;
+    max-height: 85%;
+    display: flex;
+    flex-direction: column;
 }
 
 .hidden {
@@ -136,11 +139,216 @@ button:active {
     transform: scale(0.98);
 }
 
+/* Menu Tabs */
+.menu-tabs {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.tab-btn {
+    flex: 1;
+    padding: 10px;
+    font-size: 0.8rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--color-teal);
+    box-shadow: none;
+}
+
+.tab-btn:hover {
+    background: rgba(6, 57, 112, 0.2);
+}
+
 .instructions {
     margin-top: 25px;
     font-size: 0.8rem;
     color: #888888;
     line-height: 1.4;
+}
+
+/* Sanctuary Dashboard Panels */
+.panel-title {
+    font-size: 1.6rem;
+    color: var(--color-saffron);
+    margin-bottom: 5px;
+}
+
+.panel-desc {
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 15px;
+}
+
+.currency-display {
+    background: rgba(226, 135, 67, 0.1);
+    border: 1px solid rgba(226, 135, 67, 0.3);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+    font-weight: bold;
+    margin-bottom: 20px;
+}
+
+.highlight-val {
+    color: var(--color-gold);
+    font-size: 1.2rem;
+}
+
+.monument-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.monument-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(244, 235, 208, 0.15);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+    gap: 10px;
+}
+
+.mon-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.mon-name {
+    font-size: 0.95rem;
+    color: var(--color-ivory);
+}
+
+.mon-status {
+    font-size: 0.75rem;
+    font-weight: bold;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.text-locked {
+    background: rgba(229, 57, 53, 0.15);
+    color: #E53935;
+    border: 1px solid rgba(229, 57, 53, 0.3);
+}
+
+.text-unlocked {
+    background: rgba(76, 175, 80, 0.15);
+    color: #4CAF50;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.restore-btn {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+    background: linear-gradient(135deg, var(--color-teal), #042952);
+    border-radius: 4px;
+    box-shadow: none;
+}
+
+.back-btn {
+    background: #444;
+    box-shadow: none;
+    margin-top: 10px;
+    padding: 10px;
+}
+
+/* Scrolls Library Panels */
+.scrolls-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    overflow-y: auto;
+    flex: 1;
+    margin-bottom: 20px;
+    padding: 5px;
+}
+
+.scroll-card {
+    background: rgba(226, 135, 67, 0.05);
+    border: 1.5px dashed rgba(226, 135, 67, 0.3);
+    border-radius: 8px;
+    padding: 15px 10px;
+    cursor: pointer;
+    transition: transform 0.2s, background-color 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 100px;
+}
+
+.scroll-card:hover {
+    background: rgba(226, 135, 67, 0.12);
+    transform: translateY(-2px);
+}
+
+.scroll-card.locked {
+    border-color: rgba(255, 255, 255, 0.15);
+    cursor: not-allowed;
+    background: rgba(255, 255, 255, 0.01);
+}
+
+.scroll-card.locked:hover {
+    transform: none;
+}
+
+.scroll-icon {
+    font-size: 1.6rem;
+}
+
+.scroll-title {
+    font-size: 0.8rem;
+    font-weight: bold;
+    color: var(--color-ivory);
+}
+
+/* Scroll Reader (Open Book Layout) */
+.reader-header {
+    font-size: 1.4rem;
+    color: var(--color-saffron);
+    border-bottom: 2px solid var(--color-saffron);
+    padding-bottom: 8px;
+    margin-bottom: 15px;
+}
+
+.scroll-scrollbox {
+    overflow-y: auto;
+    flex: 1;
+    text-align: left;
+    padding-right: 8px;
+    margin-bottom: 15px;
+}
+
+.reader-body {
+    font-size: 0.95rem;
+    line-height: 1.6;
+    color: #E2D3C4;
+    margin-bottom: 20px;
+}
+
+.moral-box {
+    background: rgba(255, 215, 0, 0.08);
+    border-left: 4px solid var(--color-gold);
+    padding: 10px 15px;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.85rem;
+}
+
+.moral-box strong {
+    color: var(--color-gold);
+    display: block;
+    margin-bottom: 4px;
 }
 
 /* In-Game HUD */
@@ -183,7 +391,7 @@ button:active {
     top: 90px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(6, 57, 112, 0.85); /* Deep blue theme */
+    background: rgba(6, 57, 112, 0.85);
     border: 2px solid var(--color-saffron);
     border-radius: 20px;
     padding: 8px 24px;
