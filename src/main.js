@@ -180,6 +180,9 @@ class Game {
         this.finalScore.innerText = Math.floor(this.score);
         this.finalButter.innerText = Math.floor(this.butter);
 
+        // Save progress offline in localStorage
+        this.saveStatsOffline();
+
         // Attempt score push to live venue leaderboard (local WebSocket placeholder)
         this.pushScoreToEventLeaderboard();
     }
@@ -208,27 +211,39 @@ class Game {
             // 2. Update track scroll
             this.track.update(this.speed, deltaTime);
 
-            // 3. Spawn, move, and recycle obstacles
+            // 3. Spawn, move, and recycle obstacles/coins
             this.obstacleManager.update(this.speed, deltaTime);
 
             // 4. Update player physics and animations
             this.player.update(deltaTime);
 
-            // 5. Update scoring & currency
-            this.score += deltaTime * 18.0;
-            this.butter += deltaTime * 2.2;
+            // 5. Calculate player bounding box
+            this.playerBox.setFromObject(this.player.meshGroup);
+
+            // 6. Check for coin collections
+            const collectedCoins = this.obstacleManager.checkCoinCollections(this.playerBox);
+            if (collectedCoins > 0) {
+                this.butter += collectedCoins;
+                this.score += collectedCoins * 100; // Reward bonus points
+            }
+
+            // 7. Update passive running score over time
+            this.score += deltaTime * 15.0;
             this.updateHUD();
 
-            // 6. Check for collisions
-            this.playerBox.setFromObject(this.player.meshGroup);
-            
+            // 8. Dynamic theme progression based on score
+            if (this.score >= 800) {
+                this.track.setTheme('gokul');
+            }
+
+            // 9. Check for obstacle collisions
             const collidedObstacleType = this.obstacleManager.checkCollision(this.playerBox);
             if (collidedObstacleType) {
                 console.log(`Collided with: ${collidedObstacleType} obstacle!`);
                 this.gameOver();
             }
         } else if (this.gameState === 'START') {
-            // Idle background animation (gently oscillate lights / rotate camera slightly)
+            // Idle background animation (gently oscillate camera)
             this.camera.position.x = Math.sin(Date.now() * 0.0005) * 0.6;
             this.camera.lookAt(0, 1.2, -5.0);
         }
@@ -246,14 +261,32 @@ class Game {
     }
 
     /**
+     * Stores high scores locally in the browser memory.
+     */
+    saveStatsOffline() {
+        const nickname = this.nicknameInput.value.trim() || 'Pilgrim';
+        const roundedScore = Math.floor(this.score);
+        const roundedButter = Math.floor(this.butter);
+
+        const currentHigh = parseInt(localStorage.getItem('leela_highscore') || '0', 10);
+        const currentButter = parseInt(localStorage.getItem('leela_totalbutter') || '0', 10);
+
+        if (roundedScore > currentHigh) {
+            localStorage.setItem('leela_highscore', roundedScore.toString());
+            localStorage.setItem('leela_highname', nickname);
+            console.log(`[Save] New Local High Score: ${roundedScore} by ${nickname}`);
+        }
+
+        localStorage.setItem('leela_totalbutter', (currentButter + roundedButter).toString());
+    }
+
+    /**
      * Sends local score to the projected scoreboard server (Socket.io hook).
      */
     pushScoreToEventLeaderboard() {
         const nickname = this.nicknameInput.value.trim() || 'Pilgrim';
         const finalScoreVal = Math.floor(this.score);
         console.log(`[Event Leaderboard] Score pushed for ${nickname}: ${finalScoreVal}`);
-        
-        // Note: Socket.io connection instance will be integrated in Sprint 6.
     }
 }
 
