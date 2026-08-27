@@ -58,11 +58,30 @@ class Game {
         this.introCamTargetPos = new THREE.Vector3(0, 3.5, 5.0);
         this.introCamTargetLook = new THREE.Vector3(0, 1.2, -5.0);
 
-        // 1. Establish Event WebSocket connections (Fail-Soft if server is offline)
+        // 1. Establish single AudioContext for all audio synthesis (BUG-005 Fix)
+        this.audioCtx = null;
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            this.audioCtx = new AudioContext();
+        } catch (e) {
+            console.warn("Web Audio Context not supported in this browser.");
+        }
+
+        // 2. Establish Event WebSocket connections (Fail-Soft if server is offline)
         this.socket = null;
         if (typeof io !== 'undefined') {
             this.socket = io();
             this.socket.on('connect', () => console.log('[Socket] Synchronized with local scoreboard server.'));
+            this.socket.on('submission_rejected', (data) => {
+                console.warn(`[Socket] Submission rejected: ${data.reason}`);
+                
+                // Show a quick warning banner to the user
+                const banner = document.createElement('div');
+                banner.className = 'puzzle-banner failure';
+                banner.innerText = `INTEGRITY CHECK REJECTED`;
+                document.body.appendChild(banner);
+                setTimeout(() => banner.remove(), 2500);
+            });
         } else {
             console.log('[Socket] Standalone Offline play active.');
         }
@@ -85,8 +104,6 @@ class Game {
         this.scene.fog = new THREE.FogExp2(0xF4EBD0, 0.015);
 
         this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-        
-        // Starting position near Sanctuary
         this.camera.position.set(15.0, 3.0, -5.0);
         this.camera.lookAt(15.0, 0.8, -10.0);
 
@@ -114,24 +131,25 @@ class Game {
     }
 
     /**
-     * Instantiate player, scrolling tracks, obstacles, metagame managers, and juice systems.
+     * Instantiate game objects and pass the shared AudioContext (BUG-005 Fix).
      */
     initGameObjects() {
         this.track = new Track(this.scene);
         this.player = new Player(this.scene);
         this.obstacleManager = new ObstacleManager(this.scene);
-        this.puzzleManager = new PuzzleManager(this);
+        
+        // Pass central audio context
+        this.puzzleManager = new PuzzleManager(this, this.audioCtx);
         this.sanctuary = new Sanctuary(this.scene);
 
-        // Juice systems: Particle explosion pools and sound effect synthesizers
         this.particles = new ParticleSystem(this.scene);
-        this.sfx = new SoundFXManager();
+        this.sfx = new SoundFXManager(this.audioCtx);
 
         this.playerBox = new THREE.Box3();
     }
 
     /**
-     * Map swipes and keyboard codes to player movement and play sounds.
+     * Map swipes and keyboard codes to player movement.
      */
     initInput() {
         this.inputManager = new InputManager();
@@ -181,10 +199,9 @@ class Game {
     }
 
     /**
-     * Triggers the camera transition.
+     * Triggers camera intro transition.
      */
     triggerIntroTransition() {
-        const nickname = this.nicknameInput.value.trim() || 'Pilgrim';
         this.startScreen.classList.add('hidden');
         this.gameState = 'INTRO';
     }
@@ -202,6 +219,12 @@ class Game {
         this.nextFluteMilestone = 1200;
         this.sudarshanActive = false;
         
+        // Notify server that the run has started (Anti-Cheat start trigger)
+        if (this.socket) {
+            this.socket.emit('start_run');
+            console.log('[Socket] start_run signal emitted to server.');
+        }
+
         this.particles.reset();
         this.clock.getDelta();
         this.gameState = 'PLAYING';
@@ -298,13 +321,12 @@ class Game {
 
             this.sanctuary.restoreMonument(key);
             this.refreshSanctuaryUI();
-            this.sfx.playCollect(); // Success sound chime
+            this.sfx.playCollect();
 
-            // Spawn celebration particles at the monument's center
             const offsetPos = this.sanctuary.meshGroup.position.clone().add(
                 this.sanctuary.monuments[key].mesh.position
             );
-            this.particles.spawnBurst(offsetPos, 0xFFD700, 20); // Golden sparklers
+            this.particles.spawnBurst(offsetPos, 0xFFD700, 20);
 
             const banner = document.createElement('div');
             banner.className = 'puzzle-banner success';
@@ -312,7 +334,7 @@ class Game {
             document.body.appendChild(banner);
             setTimeout(() => banner.remove(), 2000);
         } else {
-            this.sfx.playCrash(); // Fail buzz
+            this.sfx.playCrash();
 
             const banner = document.createElement('div');
             banner.className = 'puzzle-banner failure';
@@ -380,12 +402,6 @@ class Game {
        CORE ENGINE GAME TICK UPDATES
        ========================================================================= */
 
-    onWindowResize() {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
-        this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-
     animate() {
         requestAnimationFrame(() => this.animate());
 
@@ -397,10 +413,15 @@ class Game {
             this.track.update(this.speed, deltaTime);
             this.obstacleManager.update(this.speed, deltaTime);
             this.player.update(deltaTime);
-
-            // Update active particles
             this.particles.update(deltaTime);
 
+            // BUG-004 Fix: Force manual coordinates synchronization of world matrix bounds before setFromObject
+            this.player.meshGroup.updateMatrixWorld(true);
+            this.obstacleManager.obstacles.forEach(obs => obs.mesh.updateMatrixWorld(true));
+            this.obstacleManager.coins.forEach(coin => coin.mesh.updateMatrixWorld(true));
+            this.obstacleManager.powerups.forEach(p => p.mesh.updateMatrixWorld(true));
+
+            // Compute player bounding box using accurate updated world matrices
             this.playerBox.setFromObject(this.player.meshGroup);
 
             // Coin collections
@@ -411,7 +432,6 @@ class Game {
                 
                 this.sfx.playCollect();
                 
-                // Spawn golden sparkle particles at player position
                 const coinPos = this.player.meshGroup.position.clone();
                 coinPos.y += 0.4;
                 this.particles.spawnBurst(coinPos, 0xFFD700, 5);
@@ -424,7 +444,7 @@ class Game {
                 
                 const pupPos = this.player.meshGroup.position.clone();
                 pupPos.y += 0.5;
-                this.particles.spawnBurst(pupPos, 0x00FFFF, 12); // Cyan splash
+                this.particles.spawnBurst(pupPos, 0x00FFFF, 12);
 
                 if (powerup === 'chakra') {
                     this.player.activateShield(8.0);
@@ -467,6 +487,8 @@ class Game {
             if (this.camera.position.distanceTo(this.introCamTargetPos) < 0.1) {
                 this.camera.position.copy(this.introCamTargetPos);
                 this.camera.lookAt(this.introCamTargetLook);
+                
+                // Transition to gameplay
                 this.startGame();
             }
         }
@@ -514,7 +536,6 @@ class Game {
                 this.speed = Math.min(this.speed + 4.0, this.maxSpeed);
                 this.sfx.playCollect();
 
-                // Spark green success particles
                 this.particles.spawnBurst(gatePos, 0x4CAF50, 16);
 
                 const banner = document.createElement('div');
@@ -528,7 +549,6 @@ class Game {
                 this.speed = Math.max(this.speed - 5.0, this.baseSpeed);
                 this.sfx.playCrash();
 
-                // Spark red warning particles
                 this.particles.spawnBurst(gatePos, 0xF44336, 12);
 
                 const banner = document.createElement('div');
@@ -551,7 +571,6 @@ class Game {
                 this.player.shieldMesh.visible = false;
                 this.player.shieldTimer = 0;
 
-                // Gold shield break sparks
                 this.sfx.playCrash();
                 this.particles.spawnBurst(crashPos, 0xFFD700, 18);
 
@@ -567,9 +586,8 @@ class Game {
                 console.log("[Collision] Player crashed!");
                 this.sfx.playCrash();
                 
-                // Explode player into blue/gold sparkles
-                this.particles.spawnBurst(crashPos, 0x3A9EDB, 20); // Blue sparks
-                this.particles.spawnBurst(crashPos, 0xECC81A, 15); // Yellow sparks
+                this.particles.spawnBurst(crashPos, 0x3A9EDB, 20);
+                this.particles.spawnBurst(crashPos, 0xECC81A, 15);
                 
                 this.gameOver();
             }

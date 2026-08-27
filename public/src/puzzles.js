@@ -1,10 +1,9 @@
 import * as THREE from '../lib/three.module.js';
 
 export class PuzzleManager {
-    constructor(game) {
+    constructor(game, audioCtx) {
         this.game = game;
-        this.synth = null;
-        this.initAudioSynth();
+        this.audioCtx = audioCtx;
         
         // Puzzle state
         this.currentPrompt = "";
@@ -15,18 +14,6 @@ export class PuzzleManager {
         // DOM Elements
         this.overlay = null;
         this.createDOMOverlay();
-    }
-
-    /**
-     * Initializes simple Web Audio API Context.
-     */
-    initAudioSynth() {
-        try {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            this.audioCtx = new AudioContext();
-        } catch (e) {
-            console.warn("Web Audio API not supported in this browser.");
-        }
     }
 
     /**

@@ -12,7 +12,7 @@ export class ParticleSystem {
     /**
      * Spawns a burst of fading 3D particles at the target coordinates.
      * @param {THREE.Vector3|object} pos - Origin coordinate.
-     * @param {number} hexColor - Hex color value (e.g. 0xFFD700).
+     * @param {number} hexColor - Hex color value.
      * @param {number} count - Number of particles.
      */
     spawnBurst(pos, hexColor, count = 8) {
@@ -38,7 +38,7 @@ export class ParticleSystem {
                 mesh,
                 velocity,
                 life: 1.0,
-                decay: (Math.random() * 1.5) + 1.5 // Decay rate per second
+                decay: (Math.random() * 1.5) + 1.5
             });
         }
     }
@@ -52,22 +52,22 @@ export class ParticleSystem {
         for (let i = this.particles.length - 1; i >= 0; i--) {
             const p = this.particles[i];
             
-            // Apply physics
             p.velocity.y -= gravity * deltaTime;
             p.mesh.position.addScaledVector(p.velocity, deltaTime);
             
-            // Spin particles
             p.mesh.rotation.x += deltaTime * 5;
             p.mesh.rotation.y += deltaTime * 5;
 
-            // Decay life and fade opacity
             p.life -= p.decay * deltaTime;
             p.mesh.material.opacity = Math.max(p.life, 0);
 
-            // Cleanup when dead
             if (p.life <= 0) {
                 this.scene.remove(p.mesh);
-                p.mesh.geometry.dispose();
+                
+                // BUG FIX: Do NOT call p.mesh.geometry.dispose() here!
+                // Disposing of it deallocates the shared this.particleGeo buffer, breaking subsequent renders.
+                // p.mesh.geometry.dispose(); 
+                
                 p.mesh.material.dispose();
                 this.particles.splice(i, 1);
             }
@@ -80,26 +80,24 @@ export class ParticleSystem {
     reset() {
         this.particles.forEach(p => {
             this.scene.remove(p.mesh);
-            p.mesh.geometry.dispose();
             p.mesh.material.dispose();
         });
         this.particles = [];
     }
+
+    /**
+     * Dispose of shared geometry once when the entire system is decommissioned.
+     */
+    disposeSharedResources() {
+        if (this.particleGeo) {
+            this.particleGeo.dispose();
+        }
+    }
 }
 
 export class SoundFXManager {
-    constructor() {
-        this.audioCtx = null;
-        this.initContext();
-    }
-
-    initContext() {
-        try {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            this.audioCtx = new AudioContext();
-        } catch (e) {
-            console.warn("Web Audio API not supported.");
-        }
+    constructor(audioCtx) {
+        this.audioCtx = audioCtx;
     }
 
     resume() {
@@ -123,8 +121,6 @@ export class SoundFXManager {
         gain.connect(this.audioCtx.destination);
 
         osc.type = 'sine';
-        
-        // Frequency sweep from C5 (523Hz) to E5 (659Hz)
         osc.frequency.setValueAtTime(523.25, now);
         osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.08);
 
@@ -155,9 +151,8 @@ export class SoundFXManager {
         osc.connect(gain);
         gain.connect(this.audioCtx.destination);
 
-        osc.type = 'triangle'; // Warm sound
+        osc.type = 'triangle';
 
-        // Sweep from C3 (130Hz) to G3 (196Hz)
         osc.frequency.setValueAtTime(130.81, now);
         osc.frequency.linearRampToValueAtTime(196.00, now + 0.15);
 
@@ -188,9 +183,8 @@ export class SoundFXManager {
         osc.connect(gain);
         gain.connect(this.audioCtx.destination);
 
-        osc.type = 'sawtooth'; // Slight friction buzz
+        osc.type = 'sawtooth';
 
-        // Low pass filter to make the sawtooth sound softer
         const filter = this.audioCtx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(400, now);
@@ -199,7 +193,6 @@ export class SoundFXManager {
         osc.connect(filter);
         filter.connect(gain);
 
-        // Sweep down from G3 (196Hz) to C3 (130Hz)
         osc.frequency.setValueAtTime(196.00, now);
         osc.frequency.linearRampToValueAtTime(110.00, now + 0.2);
 
@@ -233,7 +226,6 @@ export class SoundFXManager {
 
         osc.type = 'sawtooth';
 
-        // Filter sweep
         const filter = this.audioCtx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(300, now);

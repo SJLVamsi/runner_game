@@ -19,7 +19,6 @@ if (fs.existsSync(SCORES_FILE)) {
     try {
         const fileContent = fs.readFileSync(SCORES_FILE, 'utf-8');
         scoresList = JSON.parse(fileContent);
-        // Sort descending by score
         scoresList.sort((a, b) => b.score - a.score);
         console.log(`[Server] Loaded ${scoresList.length} scores from scores.json`);
     } catch (e) {
@@ -28,8 +27,8 @@ if (fs.existsSync(SCORES_FILE)) {
     }
 }
 
-// 2. Serve static game files directly from the project directory
-app.use(express.static(__dirname));
+// 2. Serve static game files securely from the public folder (Prevents Directory Traversal)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // 3. Simple API endpoint to fetch raw leaderboard
 app.get('/api/leaderboard', (req, res) => {
@@ -39,11 +38,20 @@ app.get('/api/leaderboard', (req, res) => {
 // 4. WebSocket Event Handlers
 io.on('connection', (socket) => {
     console.log(`[Socket] New connection established: ${socket.id}`);
+    
+    // Store run parameters to prevent cheat injections
+    socket.startTime = null;
 
-    // Immediately push current top 10 rankings to the connected client
+    // Immediately push current standings to client
     socket.emit('update_leaderboard', {
         standings: scoresList.slice(0, 10),
         recent: getRecentRuns()
+    });
+
+    // Client notifies server that a new run has commenced
+    socket.on('start_run', () => {
+        socket.startTime = Date.now();
+        console.log(`[Socket] Run started for client: ${socket.id}`);
     });
 
     // Handle high score submissions
@@ -52,9 +60,33 @@ io.on('connection', (socket) => {
             return;
         }
 
+        // Validate that a start_run event was previously recorded
+        if (!socket.startTime) {
+            console.warn(`[Security Alert] Client ${socket.id} submitted score without registering start_run!`);
+            socket.emit('submission_rejected', { reason: 'Unauthorized submission flow' });
+            return;
+        }
+
         const name = data.name.trim().substring(0, 12) || 'Pilgrim';
         const score = Math.floor(data.score);
         const butter = Math.floor(data.butter || 0);
+
+        // Security validation check: verify duration bounds
+        const now = Date.now();
+        const durationSeconds = (now - socket.startTime) / 1000.0;
+
+        // Reset start time to prevent double submissions using same ticket
+        socket.startTime = null;
+
+        // Verify score is mathematically possible
+        // Passive score is 15 points/sec. Pot is 100 points. Let's add a buffer for puzzle gate awards.
+        const maxExpectedScore = Math.floor((durationSeconds * 22.0) + (butter * 115.0) + 1200.0);
+
+        if (score > maxExpectedScore || durationSeconds < 1.0) {
+            console.warn(`[Security Alert] Flagged cheat score from client ${socket.id}. Name: ${name}, Score: ${score}, Max Allowed: ${maxExpectedScore}, Duration: ${durationSeconds}s`);
+            socket.emit('submission_rejected', { reason: 'Score integrity check failed' });
+            return;
+        }
 
         const scoreEntry = {
             name,
@@ -63,25 +95,19 @@ io.on('connection', (socket) => {
             timestamp: Date.now()
         };
 
-        console.log(`[Server] Score Submitted: ${name} -> ${score} (Makhan: ${butter})`);
+        console.log(`[Server] Score Accepted: ${name} -> ${score} (Duration: ${durationSeconds.toFixed(1)}s)`);
 
-        // Insert score
         scoresList.push(scoreEntry);
-        
-        // Sort descending
         scoresList.sort((a, b) => b.score - a.score);
 
-        // Cap list size to top 50 records to save disk space
         if (scoresList.length > 50) {
             scoresList = scoresList.slice(0, 50);
         }
 
-        // Persist records to file
         fs.writeFile(SCORES_FILE, JSON.stringify(scoresList, null, 2), (err) => {
             if (err) console.error("[Server] Error writing to scores.json", err);
         });
 
-        // Broadcast updated standings to all connected screens/clients
         io.emit('update_leaderboard', {
             standings: scoresList.slice(0, 10),
             recent: getRecentRuns()
@@ -93,11 +119,7 @@ io.on('connection', (socket) => {
     });
 });
 
-/**
- * Grabs the last 5 runs sorted by recency to show in the marquee.
- */
 function getRecentRuns() {
-    // Sort by timestamp descending
     const sortedByTime = [...scoresList].sort((a, b) => b.timestamp - a.timestamp);
     return sortedByTime.slice(0, 5);
 }
