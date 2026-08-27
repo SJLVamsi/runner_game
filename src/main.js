@@ -3,19 +3,20 @@ import { InputManager } from './input.js';
 import { Player } from './player.js';
 import { Track } from './track.js';
 import { ObstacleManager } from './obstacles.js';
+import { PuzzleManager } from './puzzles.js';
 
 class Game {
     constructor() {
         this.container = document.getElementById('game-container');
         
-        // Game states: 'START', 'PLAYING', 'GAMEOVER'
+        // Game states: 'START', 'PLAYING', 'GAMEOVER', 'PUZZLE'
         this.gameState = 'START';
 
         // Timing properties
         this.clock = new THREE.Clock();
-        this.speed = 12.0;       // Starting speed
-        this.baseSpeed = 12.0;   // Base speed reference
-        this.maxSpeed = 28.0;    // Cap on game speed
+        this.speed = 12.0;
+        this.baseSpeed = 12.0;
+        this.maxSpeed = 28.0;
 
         // UI references
         this.startScreen = document.getElementById('start-screen');
@@ -34,6 +35,12 @@ class Game {
         this.score = 0;
         this.butter = 0;
 
+        // Trigger milestones
+        this.nextSudarshanMilestone = 500;
+        this.nextFluteMilestone = 1200;
+        this.sudarshanActive = false;
+        this.targetGlyph = "";
+
         this.initThreeJS();
         this.initGameObjects();
         this.initInput();
@@ -47,34 +54,26 @@ class Game {
      * Set up scene, camera, lights, and shadow renderer.
      */
     initThreeJS() {
-        // 1. Scene setup
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0xF4EBD0); // Soft Ivory background
-        this.scene.fog = new THREE.FogExp2(0xF4EBD0, 0.015); // Add atmosphere fog
+        this.scene.background = new THREE.Color(0xF4EBD0);
+        this.scene.fog = new THREE.FogExp2(0xF4EBD0, 0.015);
 
-        // 2. Camera setup
         this.camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
-        
-        // Classic runner perspective: behind and slightly above the player, looking down track
         this.camera.position.set(0, 3.5, 5.0);
         this.camera.lookAt(0, 1.2, -5.0);
 
-        // 3. Renderer setup
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.container.appendChild(this.renderer.domElement);
 
-        // 4. Lighting
         const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.45);
         this.scene.add(ambientLight);
 
         this.sunLight = new THREE.DirectionalLight(0xFFFFFF, 0.7);
         this.sunLight.position.set(5, 12, 3);
         this.sunLight.castShadow = true;
-        
-        // Shadow configuration for optimal quality/performance
         this.sunLight.shadow.mapSize.width = 1024;
         this.sunLight.shadow.mapSize.height = 1024;
         this.sunLight.shadow.camera.near = 0.5;
@@ -87,19 +86,21 @@ class Game {
     }
 
     /**
-     * Instantiate player, scrolling tracks, and obstacles.
+     * Instantiate player, scrolling tracks, obstacles, and the puzzle manager.
      */
     initGameObjects() {
         this.track = new Track(this.scene);
         this.player = new Player(this.scene);
         this.obstacleManager = new ObstacleManager(this.scene);
+        
+        // Puzzle System
+        this.puzzleManager = new PuzzleManager(this);
 
-        // Bounding box for checking player collisions
         this.playerBox = new THREE.Box3();
     }
 
     /**
-     * Map swipes and keyboard codes directly to player movement methods.
+     * Map swipes and keyboard codes to player movement.
      */
     initInput() {
         this.inputManager = new InputManager();
@@ -119,7 +120,7 @@ class Game {
     }
 
     /**
-     * Bind DOM button events and resize listeners.
+     * Bind DOM button events.
      */
     bindEvents() {
         this.startButton.addEventListener('click', () => this.startGame());
@@ -138,12 +139,15 @@ class Game {
         this.startScreen.classList.add('hidden');
         this.hud.classList.remove('hidden');
         
-        // Reset timers and state variables
         this.score = 0;
         this.butter = 0;
         this.speed = this.baseSpeed;
-        this.clock.getDelta(); // Clears clock baseline
+        this.nextSudarshanMilestone = 500;
+        this.nextFluteMilestone = 1200;
+        this.sudarshanActive = false;
+        this.puzzleManager.clearSudarshanPrompt();
         
+        this.clock.getDelta();
         this.gameState = 'PLAYING';
     }
 
@@ -154,36 +158,36 @@ class Game {
         this.gameoverScreen.classList.add('hidden');
         this.hud.classList.remove('hidden');
         
-        // Reset objects
         this.player.reset();
         this.track.reset();
         this.obstacleManager.reset();
+        this.puzzleManager.clearSudarshanPrompt();
 
         this.score = 0;
         this.butter = 0;
         this.speed = this.baseSpeed;
+        this.nextSudarshanMilestone = 500;
+        this.nextFluteMilestone = 1200;
+        this.sudarshanActive = false;
+        
         this.clock.getDelta();
-
         this.gameState = 'PLAYING';
     }
 
     /**
-     * Triggers collision failure, updating high scores.
+     * Triggers collision failure.
      */
     gameOver() {
         this.gameState = 'GAMEOVER';
 
         this.hud.classList.add('hidden');
         this.gameoverScreen.classList.remove('hidden');
+        this.puzzleManager.clearSudarshanPrompt();
 
-        // Update statistics displays
         this.finalScore.innerText = Math.floor(this.score);
         this.finalButter.innerText = Math.floor(this.butter);
 
-        // Save progress offline in localStorage
         this.saveStatsOffline();
-
-        // Attempt score push to live venue leaderboard (local WebSocket placeholder)
         this.pushScoreToEventLeaderboard();
     }
 
@@ -202,7 +206,7 @@ class Game {
     animate() {
         requestAnimationFrame(() => this.animate());
 
-        const deltaTime = Math.min(this.clock.getDelta(), 0.1); // Cap delta to prevent clipping on tab switch
+        const deltaTime = Math.min(this.clock.getDelta(), 0.1);
 
         if (this.gameState === 'PLAYING') {
             // 1. Gradually accelerate game speed
@@ -211,7 +215,7 @@ class Game {
             // 2. Update track scroll
             this.track.update(this.speed, deltaTime);
 
-            // 3. Spawn, move, and recycle obstacles/coins
+            // 3. Spawn and move obstacles/coins/powerups
             this.obstacleManager.update(this.speed, deltaTime);
 
             // 4. Update player physics and animations
@@ -224,32 +228,154 @@ class Game {
             const collectedCoins = this.obstacleManager.checkCoinCollections(this.playerBox);
             if (collectedCoins > 0) {
                 this.butter += collectedCoins;
-                this.score += collectedCoins * 100; // Reward bonus points
+                this.score += collectedCoins * 100;
             }
 
-            // 7. Update passive running score over time
+            // 7. Check for power-up collections
+            const powerup = this.obstacleManager.checkPowerUpCollections(this.playerBox);
+            if (powerup) {
+                if (powerup === 'chakra') {
+                    this.player.activateShield(8.0); // Invincible shield
+                } else if (powerup === 'feather') {
+                    this.player.activateFlight(6.0); // Flying feathers
+                    // Spawn a trail of coins in the sky
+                    this.obstacleManager.spawnSkyCoins(this.player.meshGroup.position.z - 5.0);
+                }
+            }
+
+            // 8. Update passive running score over time
             this.score += deltaTime * 15.0;
             this.updateHUD();
 
-            // 8. Dynamic theme progression based on score
-            if (this.score >= 800) {
-                this.track.setTheme('gokul');
+            // 9. Check for educational milestones
+            this.checkMilestones();
+
+            // 10. Check for obstacle collisions
+            const collidedObstacle = this.obstacleManager.checkCollision(this.playerBox);
+            if (collidedObstacle) {
+                this.handleCollision(collidedObstacle);
             }
 
-            // 9. Check for obstacle collisions
-            const collidedObstacleType = this.obstacleManager.checkCollision(this.playerBox);
-            if (collidedObstacleType) {
-                console.log(`Collided with: ${collidedObstacleType} obstacle!`);
-                this.gameOver();
-            }
+            // 11. Camera interpolation based on state (Zoom out if flying)
+            this.updateCamera(deltaTime);
+
         } else if (this.gameState === 'START') {
-            // Idle background animation (gently oscillate camera)
             this.camera.position.x = Math.sin(Date.now() * 0.0005) * 0.6;
             this.camera.lookAt(0, 1.2, -5.0);
         }
 
         // Render Frame
         this.renderer.render(this.scene, this.camera);
+    }
+
+    /**
+     * Checks score thresholds to trigger puzzles.
+     */
+    checkMilestones() {
+        // A. Trigger Sudarshan Gate Challenge
+        if (this.score >= this.nextSudarshanMilestone && !this.sudarshanActive) {
+            this.sudarshanActive = true;
+            this.nextSudarshanMilestone += 1000; // Schedule next gate run
+            
+            // Set up HUD prompt and spawn gates
+            this.targetGlyph = this.puzzleManager.generateSudarshanPrompt();
+            this.obstacleManager.spawnSudarshanGates(this.targetGlyph);
+            console.log(`[Sudarshan Gate] Spawning arches for: ${this.targetGlyph}`);
+        }
+
+        // B. Trigger Flute Meditation Puzzle
+        if (this.score >= this.nextFluteMilestone) {
+            this.nextFluteMilestone += 1200; // Schedule next meditation
+            this.puzzleManager.triggerFlutePuzzle();
+            console.log(`[Flute Meditation] Pausing runner to trigger memory puzzle.`);
+        }
+
+        // C. Dynamic theme progression
+        if (this.score >= 800) {
+            this.track.setTheme('gokul');
+        }
+    }
+
+    /**
+     * Core collision evaluation logic.
+     */
+    handleCollision(obstacle) {
+        if (obstacle.type === 'sudarshan_gate') {
+            this.sudarshanActive = false;
+            this.puzzleManager.clearSudarshanPrompt();
+
+            // Check if player navigated through the correct Sanskrit glyph gate
+            if (obstacle.glyph === this.targetGlyph) {
+                console.log("[Sudarshan Gate] Correct Gate Solved! Speed Boost.");
+                this.score += 250;
+                
+                // Temporary speed boost spark
+                this.speed = Math.min(this.speed + 4.0, this.maxSpeed);
+
+                const banner = document.createElement('div');
+                banner.className = 'puzzle-banner success';
+                banner.innerText = 'DHARMA GATE ALIGNED! +250';
+                document.body.appendChild(banner);
+                setTimeout(() => banner.remove(), 1800);
+            } else {
+                console.log("[Sudarshan Gate] Incorrect Gate. Speed Slow Penalty.");
+                this.score = Math.max(this.score - 100, 0);
+                this.speed = Math.max(this.speed - 5.0, this.baseSpeed); // Penalty
+
+                const banner = document.createElement('div');
+                banner.className = 'puzzle-banner failure';
+                banner.innerText = 'WRONG PATH DEVIATION -100';
+                document.body.appendChild(banner);
+                setTimeout(() => banner.remove(), 1800);
+            }
+
+            // Remove the triggered gates immediately so player doesn't collide with remaining gates in the row
+            this.obstacleManager.obstacles = this.obstacleManager.obstacles.filter(obs => obs.type !== 'sudarshan_gate');
+            obstacle.destroy();
+        } else {
+            // Standard Obstacles: logs and floral garlands
+            if (this.player.isShielded) {
+                // Shield absorbs collision
+                console.log("[Collision] Shield absorbed obstacle collision.");
+                
+                // Play splash effect and consume shield
+                this.player.isShielded = false;
+                this.player.shieldMesh.visible = false;
+                this.player.shieldTimer = 0;
+
+                // Remove obstacle
+                this.obstacleManager.obstacles = this.obstacleManager.obstacles.filter(o => o !== obstacle);
+                obstacle.destroy();
+
+                const banner = document.createElement('div');
+                banner.className = 'puzzle-banner success';
+                banner.innerText = 'SHIELD ABSORBED CLASH';
+                document.body.appendChild(banner);
+                setTimeout(() => banner.remove(), 1500);
+            } else {
+                // Crash!
+                console.log("[Collision] Player crashed!");
+                this.gameOver();
+            }
+        }
+    }
+
+    /**
+     * Camera interpolator. Zooms out and upwards during peacock flight.
+     */
+    updateCamera(deltaTime) {
+        let targetCamY = 3.5;
+        let targetCamZ = 5.0;
+
+        if (this.player.isFlying) {
+            // Elevate camera to track player in the sky
+            targetCamY = 9.0;
+            targetCamZ = 7.5;
+        }
+
+        this.camera.position.y += (targetCamY - this.camera.position.y) * 3.0 * deltaTime;
+        this.camera.position.z += (targetCamZ - this.camera.position.z) * 3.0 * deltaTime;
+        this.camera.lookAt(this.player.meshGroup.position.x, this.player.posY + 1.2, -5.0);
     }
 
     /**
@@ -261,7 +387,7 @@ class Game {
     }
 
     /**
-     * Stores high scores locally in the browser memory.
+     * Stores high scores locally in browser memory.
      */
     saveStatsOffline() {
         const nickname = this.nicknameInput.value.trim() || 'Pilgrim';
@@ -281,7 +407,7 @@ class Game {
     }
 
     /**
-     * Sends local score to the projected scoreboard server (Socket.io hook).
+     * Sends local score to scoreboard server.
      */
     pushScoreToEventLeaderboard() {
         const nickname = this.nicknameInput.value.trim() || 'Pilgrim';

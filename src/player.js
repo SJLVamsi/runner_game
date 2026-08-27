@@ -5,12 +5,12 @@ export class Player {
         this.scene = scene;
 
         // Lane setup
-        this.lanes = [-2.0, 0.0, 2.0]; // Left, Middle, Right positions
-        this.currentLane = 1; // Start in middle lane (index 1)
+        this.lanes = [-2.0, 0.0, 2.0];
+        this.currentLane = 1;
         
         // Positional targets and smoothing
         this.targetX = this.lanes[this.currentLane];
-        this.laneSwitchSpeed = 15.0; // Interpolation constant
+        this.laneSwitchSpeed = 15.0;
 
         // Physics properties
         this.posY = 0.0;
@@ -21,11 +21,19 @@ export class Player {
         // States
         this.isJumping = false;
         this.isSliding = false;
-        this.slideDuration = 0.6; // Seconds
+        this.slideDuration = 0.6;
         this.slideTimer = 0.0;
 
-        // Avatar mesh references
+        // Powerup States
+        this.isShielded = false;
+        this.shieldTimer = 0.0;
+        
+        this.isFlying = false;
+        this.flyTimer = 0.0;
+
+        // Avatar meshes
         this.meshGroup = new THREE.Group();
+        this.shieldMesh = null;
         this.createAvatar();
         this.scene.add(this.meshGroup);
     }
@@ -33,6 +41,7 @@ export class Player {
     /**
      * Creates a stylized representation of Krishna using basic meshes.
      * Includes blue skin tone, yellow dhoti, and a gold crown with a peacock feather.
+     * Also sets up a hidden Sudarshana Chakra ring mesh that activates during shields.
      */
     createAvatar() {
         const materialGold = new THREE.MeshLambertMaterial({ color: 0xFFD700 });
@@ -74,12 +83,46 @@ export class Player {
         feather.rotation.z = -0.3;
         this.meshGroup.add(feather);
 
-        // Align starting position (on ground, in lane)
+        // 6. Sudarshana Chakra Shield (Golden spinning torus orbiting player torso)
+        const shieldGeo = new THREE.TorusGeometry(0.68, 0.04, 6, 16);
+        this.shieldMesh = new THREE.Mesh(shieldGeo, materialGold);
+        this.shieldMesh.position.y = 1.0;
+        this.shieldMesh.rotation.x = Math.PI / 2; // Flat disc alignment
+        this.shieldMesh.visible = false;           // Hidden by default
+        this.meshGroup.add(this.shieldMesh);
+
+        // Align starting position
         this.meshGroup.position.set(this.targetX, this.posY, 0.0);
     }
 
     /**
-     * Initiates a lane change to the left.
+     * Trigger invincibility.
+     */
+    activateShield(duration) {
+        this.isShielded = true;
+        this.shieldTimer = duration;
+        this.shieldMesh.visible = true;
+        console.log(`[Player Powerup] Sudarshana Shield Activated: ${duration}s`);
+    }
+
+    /**
+     * Trigger sky flight.
+     */
+    activateFlight(duration) {
+        this.isFlying = true;
+        this.flyTimer = duration;
+        
+        // Force break any active slides
+        if (this.isSliding) {
+            this.isSliding = false;
+            this.meshGroup.scale.y = 1.0;
+        }
+        
+        console.log(`[Player Powerup] Pushpak Flight Activated: ${duration}s`);
+    }
+
+    /**
+     * Shifts lane left.
      */
     moveLeft() {
         if (this.currentLane > 0) {
@@ -89,7 +132,7 @@ export class Player {
     }
 
     /**
-     * Initiates a lane change to the right.
+     * Shifts lane right.
      */
     moveRight() {
         if (this.currentLane < 2) {
@@ -99,86 +142,124 @@ export class Player {
     }
 
     /**
-     * Triggers a jump action if eligible.
+     * Triggers jump.
      */
     jump() {
-        if (!this.isJumping && !this.isSliding) {
+        // Cannot jump while already in the air or sliding
+        if (!this.isJumping && !this.isSliding && !this.isFlying) {
             this.isJumping = true;
             this.velY = this.jumpForce;
         }
     }
 
     /**
-     * Triggers a slide action if eligible.
+     * Triggers slide.
      */
     slide() {
-        if (!this.isJumping && !this.isSliding) {
+        // Cannot slide while jumping or flying
+        if (!this.isJumping && !this.isSliding && !this.isFlying) {
             this.isSliding = true;
             this.slideTimer = this.slideDuration;
-
-            // Visual feedback: Shrink avatar vertically for sliding animation
             this.meshGroup.scale.y = 0.5;
-            // Adjust position so it doesn't float when scaling around center
             this.meshGroup.position.y = this.posY - 0.25;
         }
     }
 
     /**
-     * Reset character back to initial state.
+     * Complete reset.
      */
     reset() {
         this.currentLane = 1;
         this.targetX = this.lanes[this.currentLane];
         this.posY = 0.0;
         this.velY = 0.0;
+        
         this.isJumping = false;
         this.isSliding = false;
+        
+        this.isShielded = false;
+        this.shieldTimer = 0.0;
+        this.shieldMesh.visible = false;
+        
+        this.isFlying = false;
+        this.flyTimer = 0.0;
+
         this.meshGroup.scale.y = 1.0;
         this.meshGroup.position.set(this.targetX, this.posY, 0.0);
     }
 
     /**
-     * Updates physics, lane shifts, and animation ticks.
-     * @param {number} deltaTime - Frame time delta.
+     * Updates physics, lane switches, and powerup cooldown ticks.
      */
     update(deltaTime) {
-        // 1. Smooth Lane Interpolation (Lerp along X axis)
+        // 1. Smooth Lane Interpolation (X axis)
         this.meshGroup.position.x += (this.targetX - this.meshGroup.position.x) * this.laneSwitchSpeed * deltaTime;
 
-        // 2. Jump Physics (Y axis calculation)
-        if (this.isJumping) {
-            this.velY -= this.gravity * deltaTime;
-            this.posY += this.velY * deltaTime;
-
-            // Check ground collision
-            if (this.posY <= 0.0) {
-                this.posY = 0.0;
-                this.velY = 0.0;
-                this.isJumping = false;
-            }
-            this.meshGroup.position.y = this.posY;
-        }
-
-        // 3. Slide Timer Updates
-        if (this.isSliding) {
-            this.slideTimer -= deltaTime;
-            if (this.slideTimer <= 0.0) {
-                this.isSliding = false;
-                this.meshGroup.scale.y = 1.0; // Restore standard scale
-            }
-        }
-
-        // 4. Running Animation (Oscillate height slightly when on the ground)
-        if (!this.isJumping && !this.isSliding) {
-            const runningBounce = Math.sin(Date.now() * 0.015) * 0.03;
-            this.meshGroup.position.y = runningBounce;
+        // 2. Power-Up state ticks
+        if (this.isShielded) {
+            this.shieldTimer -= deltaTime;
             
-            // Add a slight running tilt rotation
-            this.meshGroup.rotation.y = Math.sin(Date.now() * 0.01) * 0.08;
-            this.meshGroup.rotation.z = Math.sin(Date.now() * 0.01) * 0.04;
+            // Spin the shield mesh
+            this.shieldMesh.rotation.z += deltaTime * 8.0;
+
+            if (this.shieldTimer <= 0.0) {
+                this.isShielded = false;
+                this.shieldMesh.visible = false;
+                console.log(`[Player Powerup] Sudarshana Shield Expired`);
+            }
+        }
+
+        if (this.isFlying) {
+            this.flyTimer -= deltaTime;
+            
+            // Smoothly ascend to sky level (Y = 6.0)
+            const targetY = 6.0;
+            this.posY += (targetY - this.posY) * 4.0 * deltaTime;
+            this.meshGroup.position.y = this.posY;
+
+            if (this.flyTimer <= 0.0) {
+                this.isFlying = false;
+                console.log(`[Player Powerup] Pushpak Flight Expired`);
+            }
         } else {
-            this.meshGroup.rotation.y = 0;
-            this.meshGroup.rotation.z = 0;
+            // Standard Jump physics or ground running
+            if (this.isJumping) {
+                this.velY -= this.gravity * deltaTime;
+                this.posY += this.velY * deltaTime;
+
+                if (this.posY <= 0.0) {
+                    this.posY = 0.0;
+                    this.velY = 0.0;
+                    this.isJumping = false;
+                }
+                this.meshGroup.position.y = this.posY;
+            } else if (this.posY > 0.0) {
+                // If exiting flight, drift back down gently to the ground
+                this.posY += (0.0 - this.posY) * 5.0 * deltaTime;
+                if (this.posY < 0.05) this.posY = 0.0;
+                this.meshGroup.position.y = this.posY;
+            }
+
+            // Slide state tick
+            if (this.isSliding) {
+                this.slideTimer -= deltaTime;
+                if (this.slideTimer <= 0.0) {
+                    this.isSliding = false;
+                    this.meshGroup.scale.y = 1.0;
+                }
+            }
+
+            // Bounce run oscillation
+            if (!this.isJumping && !this.isSliding && this.posY === 0.0) {
+                const runningBounce = Math.sin(Date.now() * 0.015) * 0.03;
+                this.meshGroup.position.y = runningBounce;
+                
+                this.meshGroup.rotation.y = Math.sin(Date.now() * 0.01) * 0.08;
+                this.meshGroup.rotation.z = Math.sin(Date.now() * 0.01) * 0.04;
+            } else {
+                this.meshGroup.rotation.y = 0;
+                this.meshGroup.rotation.z = 0;
+            }
         }
     }
 }
