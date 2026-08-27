@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leela: Live Leaderboard</title>
+    <style>
+        :root {
+            --color-saffron: #E28743;
+            --color-teal: #063970;
+            --color-ivory: #F4EBD0;
+            --color-gold: #FFD700;
+            --color-dark: #121212;
+            --color-white: #FFFFFF;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--color-dark);
+            color: var(--color-ivory);
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: 40px 20px;
+            height: 100vh;
+        }
+
+        /* Border trim */
+        .page-border {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            right: 15px;
+            bottom: 15px;
+            border: 3px double var(--color-saffron);
+            border-radius: 12px;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Header block */
+        header {
+            text-align: center;
+            z-index: 5;
+            margin-bottom: 10px;
+        }
+
+        h1 {
+            font-size: 3.5rem;
+            letter-spacing: 6px;
+            color: var(--color-saffron);
+            text-shadow: 0 0 15px rgba(226, 135, 67, 0.4);
+            margin-bottom: 5px;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            color: var(--color-gold);
+            letter-spacing: 3px;
+            font-weight: 400;
+        }
+
+        /* Leaderboard table container */
+        .table-container {
+            width: 90%;
+            max-width: 800px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(244, 235, 208, 0.15);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+            z-index: 5;
+            flex: 1;
+            margin: 20px 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 1.25rem;
+        }
+
+        th {
+            border-bottom: 2px solid var(--color-saffron);
+            padding: 12px 10px;
+            color: var(--color-gold);
+            letter-spacing: 2px;
+            font-size: 1.1rem;
+        }
+
+        td {
+            padding: 10px 10px;
+            border-bottom: 1px solid rgba(244, 235, 208, 0.08);
+            font-weight: 500;
+        }
+
+        tr:nth-child(even) td {
+            background-color: rgba(255, 255, 255, 0.01);
+        }
+
+        /* Custom highlights for rank podium */
+        .rank-col {
+            font-weight: bold;
+            width: 12%;
+            text-align: center;
+        }
+
+        .gold-rank { color: var(--color-gold); font-size: 1.4rem; }
+        .silver-rank { color: #C0C0C0; font-size: 1.3rem; }
+        .bronze-rank { color: #CD7F32; font-size: 1.2rem; }
+
+        .score-col {
+            color: var(--color-gold);
+            font-weight: bold;
+            text-align: right;
+            width: 25%;
+        }
+
+        .butter-col {
+            text-align: right;
+            width: 20%;
+        }
+
+        /* Live Scoreboard Marquee banner */
+        .marquee-banner {
+            width: 100%;
+            background: rgba(6, 57, 112, 0.35);
+            border-top: 1.5px solid var(--color-teal);
+            border-bottom: 1.5px solid var(--color-teal);
+            padding: 10px 0;
+            overflow: hidden;
+            white-space: nowrap;
+            box-sizing: border-box;
+            z-index: 5;
+        }
+
+        .marquee-content {
+            display: inline-block;
+            padding-left: 100%;
+            animation: marquee 25s linear infinite;
+            font-size: 1.1rem;
+            color: var(--color-ivory);
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .marquee-run {
+            margin-right: 50px;
+            display: inline-block;
+        }
+
+        .marquee-run span {
+            color: var(--color-gold);
+        }
+
+        @keyframes marquee {
+            0% { transform: translate3d(0, 0, 0); }
+            100% { transform: translate3d(-100%, 0, 0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-border"></div>
+
+    <header>
+        <h1>LEELA</h1>
+        <h2>HERITAGE RACES - LIVE LEADERS</h2>
+    </header>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th class="rank-col">RANK</th>
+                    <th>PILGRIM</th>
+                    <th style="text-align: right;">MAKHAN POTS</th>
+                    <th style="text-align: right;">DEVOTION SCORE</th>
+                </tr>
+            </thead>
+            <tbody id="leaderboard-body">
+                <!-- Spawns dynamically via Socket.io -->
+                <tr><td colspan="4" style="text-align:center;padding:50px 0;color:#666;">Waiting for connection...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="marquee-banner">
+        <div id="recent-marquee" class="marquee-content">
+            Pilgrims are running the trails of Bharat... Scan the QR code to join!
+        </div>
+    </div>
+
+    <!-- Load Socket.io Client -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Connect to WebSocket server serving this file
+        const socket = io();
+
+        const leaderboardBody = document.getElementById('leaderboard-body');
+        const recentMarquee = document.getElementById('recent-marquee');
+
+        socket.on('connect', () => {
+            console.log('[Scoreboard] Connected to Socket server.');
+        });
+
+        // Listen for updated score events from server
+        socket.on('update_leaderboard', (data) => {
+            console.log('[Scoreboard] Leaderboard update received:', data);
+            
+            // 1. Populate top 10 table
+            const standings = data.standings || [];
+            leaderboardBody.innerHTML = ''; // Clear
+
+            if (standings.length === 0) {
+                leaderboardBody.innerHTML = `<tr><td colspan="4" style="text-align:center;padding:50px 0;color:#888;">No runs completed yet. Scan QR code and be the first!</td></tr>`;
+            } else {
+                standings.forEach((entry, index) => {
+                    const row = document.createElement('tr');
+                    const rank = index + 1;
+                    
+                    let rankClass = "rank-col";
+                    let medal = rank.toString();
+                    if (rank === 1) { rankClass += " gold-rank"; medal = "🥇"; }
+                    else if (rank === 2) { rankClass += " silver-rank"; medal = "🥈"; }
+                    else if (rank === 3) { rankClass += " bronze-rank"; medal = "🥉"; }
+
+                    row.innerHTML = `
+                        <td class="${rankClass}">${medal}</td>
+                        <td>${escapeHtml(entry.name)}</td>
+                        <td class="butter-col" style="color:#FFF;">🥛 ${entry.butter}</td>
+                        <td class="score-col">${entry.score}</td>
+                    `;
+                    leaderboardBody.appendChild(row);
+                });
+            }
+
+            // 2. Populate scrolling recent runs marquee
+            const recents = data.recent || [];
+            if (recents.length > 0) {
+                let marqueeHTML = '';
+                recents.forEach(run => {
+                    const timeAgo = Math.round((Date.now() - run.timestamp) / 1000);
+                    let timeStr = `${timeAgo}s ago`;
+                    if (timeAgo > 60) timeStr = `${Math.round(timeAgo/60)}m ago`;
+                    
+                    marqueeHTML += `
+                        <div class="marquee-run">
+                            🏃 <strong>${escapeHtml(run.name)}</strong> finished with score <span>${run.score}</span> (${run.butter} Pots) - ${timeStr}
+                        </div>
+                    `;
+                });
+                recentMarquee.innerHTML = marqueeHTML;
+            } else {
+                recentMarquee.innerHTML = "Pilgrims are running the trails of Bharat... Scan the QR code to join!";
+            }
+        });
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+    </script>
+</body>
+</html>

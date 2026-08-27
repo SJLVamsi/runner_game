@@ -18,7 +18,7 @@ export class PuzzleManager {
     }
 
     /**
-     * Initializes simple Web Audio API Oscillator to play note frequencies.
+     * Initializes simple Web Audio API Context.
      */
     initAudioSynth() {
         try {
@@ -30,13 +30,15 @@ export class PuzzleManager {
     }
 
     /**
-     * Plays a pure sine wave pitch corresponding to Indian Sargam notes.
+     * Plays a smooth, warm flute-like sargam note using pure Web Audio oscillator scheduling.
+     * Implements Attack-Decay-Release envelope ramps to prevent glitchy clicks/pops,
+     * and schedules clean node disconnects.
      * @param {string} note - "Sa", "Re", "Ga"
      */
     playNote(note) {
         if (!this.audioCtx) return;
         
-        // Resume context if suspended (browser security policy)
+        // Resume context if suspended (browser security policies)
         if (this.audioCtx.state === 'suspended') {
             this.audioCtx.resume();
         }
@@ -47,21 +49,36 @@ export class PuzzleManager {
         osc.connect(gainNode);
         gainNode.connect(this.audioCtx.destination);
         
-        // Set note frequency
+        // Use a Sine wave to represent a clean, soft flute timbre
+        osc.type = 'sine';
+
+        // Sargam frequencies (C4, D4, E4)
         const frequencies = {
-            "Sa": 261.63, // C4
-            "Re": 293.66, // D4
-            "Ga": 329.63  // E4
+            "Sa": 261.63, 
+            "Re": 293.66, 
+            "Ga": 329.63  
         };
         
-        osc.frequency.setValueAtTime(frequencies[note] || 260, this.audioCtx.currentTime);
-        gainNode.gain.setValueAtTime(0.3, this.audioCtx.currentTime);
+        const freq = frequencies[note] || 260.0;
+        const now = this.audioCtx.currentTime;
+
+        osc.frequency.setValueAtTime(freq, now);
+
+        // Smooth volume envelope: Attack (0.05s) -> Decay/Release (0.4s) to zero
+        gainNode.gain.setValueAtTime(0.0001, now);
+        gainNode.gain.linearRampToValueAtTime(0.25, now + 0.05); // Attack ramp up (removes starting click)
         
-        // Fade out
-        gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioCtx.currentTime + 0.45);
+        // Exponential decay to a near-zero amplitude (removes ending pop)
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
         
-        osc.start();
-        osc.stop(this.audioCtx.currentTime + 0.5);
+        osc.start(now);
+        osc.stop(now + 0.5);
+
+        // Garbage collection: Disconnect nodes from memory after stop schedule
+        setTimeout(() => {
+            osc.disconnect();
+            gainNode.disconnect();
+        }, 600);
     }
 
     /**
@@ -103,13 +120,11 @@ export class PuzzleManager {
 
     /**
      * Triggers the Sudarshan Gate visual prompt overlay on HUD.
-     * @returns {string} - The chosen target Sanskrit glyph.
      */
     generateSudarshanPrompt() {
         const glyphs = ["ॐ", "श्री", "हरि"];
         this.currentPrompt = glyphs[Math.floor(Math.random() * glyphs.length)];
         
-        // Display prompt on HUD
         let promptHUD = document.getElementById('sudarshan-prompt');
         if (!promptHUD) {
             promptHUD = document.createElement('div');
@@ -118,7 +133,7 @@ export class PuzzleManager {
         }
         
         promptHUD.innerHTML = `RUN THROUGH GATE: <span class="target-glyph">${this.currentPrompt}</span>`;
-        promptHUD.className = ''; // Remove hidden/slide styles to show
+        promptHUD.className = '';
         
         return this.currentPrompt;
     }
@@ -149,10 +164,9 @@ export class PuzzleManager {
             this.fluteSequence.push(randomNote);
         }
 
-        // Disable buttons during playback
         this.toggleButtons(false);
 
-        // Play sequence
+        // Play sequence after a short breather
         setTimeout(() => this.playSequence(0), 800);
     }
 
@@ -162,7 +176,6 @@ export class PuzzleManager {
      */
     playSequence(index) {
         if (index >= this.fluteSequence.length) {
-            // Done playing, let player interact
             this.toggleButtons(true);
             return;
         }
@@ -180,7 +193,7 @@ export class PuzzleManager {
         setTimeout(() => {
             light.classList.remove('active');
             light.style.backgroundColor = '#444';
-            setTimeout(() => this.playSequence(index + 1), 250);
+            setTimeout(() => this.playSequence(index + 1), 350); // Generous gap to avoid overlap
         }, 500);
     }
 
@@ -191,20 +204,16 @@ export class PuzzleManager {
         this.playNote(note);
         this.playerSequence.push(note);
 
-        // Visual flash on button
         buttonElement.classList.add('flash-active');
         setTimeout(() => buttonElement.classList.remove('flash-active'), 200);
 
-        // Validate choice
         const currentIndex = this.playerSequence.length - 1;
         if (this.playerSequence[currentIndex] !== this.fluteSequence[currentIndex]) {
-            // Mistake made! Fail puzzle.
             this.endFlutePuzzle(false);
             return;
         }
 
         if (this.playerSequence.length === this.fluteSequence.length) {
-            // Sequence completed successfully! Solve puzzle.
             this.endFlutePuzzle(true);
         }
     }
@@ -226,7 +235,6 @@ export class PuzzleManager {
     endFlutePuzzle(solved) {
         this.overlay.classList.add('hidden');
         
-        // Visual indicator text overlay
         const banner = document.createElement('div');
         banner.className = solved ? 'puzzle-banner success' : 'puzzle-banner failure';
         banner.innerText = solved ? 'DEVOTION SHIELD ACQUIRED!' : 'MEDITATION INTERRUPTED';
@@ -235,13 +243,13 @@ export class PuzzleManager {
 
         if (solved) {
             this.game.score += 300;
-            this.game.player.activateShield(6.0); // 6 seconds shield
+            this.game.player.activateShield(6.0);
         } else {
-            this.game.speed = Math.max(this.game.speed - 4.0, this.game.baseSpeed); // Speed slow down penalty
+            this.game.speed = Math.max(this.game.speed - 4.0, this.game.baseSpeed);
         }
 
         // Resume running
         this.game.gameState = 'PLAYING';
-        this.game.clock.getDelta(); // Reset clock delta
+        this.game.clock.getDelta();
     }
 }

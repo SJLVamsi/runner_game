@@ -57,6 +57,15 @@ class Game {
         this.introCamTargetPos = new THREE.Vector3(0, 3.5, 5.0);
         this.introCamTargetLook = new THREE.Vector3(0, 1.2, -5.0);
 
+        // 1. Establish Event WebSocket connections (Fail-Soft if server is offline)
+        this.socket = null;
+        if (typeof io !== 'undefined') {
+            this.socket = io();
+            this.socket.on('connect', () => console.log('[Socket] Synchronized with local scoreboard server.'));
+        } else {
+            console.log('[Socket] Standalone Offline play active.');
+        }
+
         this.initThreeJS();
         this.initGameObjects();
         this.initInput();
@@ -111,8 +120,6 @@ class Game {
         this.player = new Player(this.scene);
         this.obstacleManager = new ObstacleManager(this.scene);
         this.puzzleManager = new PuzzleManager(this);
-        
-        // 3D Sanctuary Metagame
         this.sanctuary = new Sanctuary(this.scene);
 
         this.playerBox = new THREE.Box3();
@@ -145,16 +152,13 @@ class Game {
         this.startButton.addEventListener('click', () => this.triggerIntroTransition());
         this.restartButton.addEventListener('click', () => this.restartGame());
         
-        // Sanctuary dashboard triggers
         this.sanctuaryButton.addEventListener('click', () => this.openSanctuaryDashboard());
         this.closeSanctuaryButton.addEventListener('click', () => this.closeSanctuaryDashboard());
         
-        // Scrolls library triggers
         this.scrollsButton.addEventListener('click', () => this.openScrollsLibrary());
         this.closeScrollsButton.addEventListener('click', () => this.closeScrollsLibrary());
         this.closeReaderButton.addEventListener('click', () => this.closeScrollReader());
 
-        // Bind restore buttons
         this.sanctuaryPanel.querySelectorAll('.restore-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const key = e.target.getAttribute('data-key');
@@ -166,10 +170,9 @@ class Game {
     }
 
     /**
-     * Triggers the camera transition from Sanctuary garden to running track.
+     * Triggers the camera transition.
      */
     triggerIntroTransition() {
-        const nickname = this.nicknameInput.value.trim() || 'Pilgrim';
         this.startScreen.classList.add('hidden');
         this.gameState = 'INTRO';
     }
@@ -203,7 +206,6 @@ class Game {
         this.obstacleManager.reset();
         this.puzzleManager.clearSudarshanPrompt();
 
-        // Snap camera back to menu viewpoint
         this.camera.position.set(15.0, 3.0, -5.0);
         this.camera.lookAt(15.0, 0.8, -10.0);
 
@@ -234,7 +236,6 @@ class Game {
     openSanctuaryDashboard() {
         this.startScreen.classList.add('hidden');
         this.sanctuaryPanel.classList.remove('hidden');
-        
         this.refreshSanctuaryUI();
     }
 
@@ -244,11 +245,9 @@ class Game {
     }
 
     refreshSanctuaryUI() {
-        // Fetch current savings
         const totalButter = parseInt(localStorage.getItem('leela_totalbutter') || '0', 10);
         this.sancButterVal.innerText = totalButter;
 
-        // Refresh monument cards
         Object.keys(this.sanctuary.monuments).forEach(key => {
             const data = this.sanctuary.monuments[key];
             const card = document.getElementById(`card-${key}`);
@@ -264,7 +263,6 @@ class Game {
                 statusSpan.className = "mon-status text-locked";
                 restoreBtn.classList.remove('hidden');
                 
-                // Dim button if player doesn't have enough money
                 if (totalButter < data.cost) {
                     restoreBtn.style.opacity = '0.5';
                 } else {
@@ -281,24 +279,18 @@ class Game {
         const totalButter = parseInt(localStorage.getItem('leela_totalbutter') || '0', 10);
         
         if (totalButter >= data.cost) {
-            // Deduct cost and save
             const newTotal = totalButter - data.cost;
             localStorage.setItem('leela_totalbutter', newTotal.toString());
 
-            // Trigger visual diorama restore
             this.sanctuary.restoreMonument(key);
-            
-            // Refresh card display
             this.refreshSanctuaryUI();
 
-            // Overlay banner
             const banner = document.createElement('div');
             banner.className = 'puzzle-banner success';
             banner.innerText = `${data.name.toUpperCase()} RESTORED!`;
             document.body.appendChild(banner);
             setTimeout(() => banner.remove(), 2000);
         } else {
-            // Alert user of insufficient funds
             const banner = document.createElement('div');
             banner.className = 'puzzle-banner failure';
             banner.innerText = `REQUIRES ${data.cost} MAKHAN POTS!`;
@@ -315,9 +307,8 @@ class Game {
         this.startScreen.classList.add('hidden');
         this.scrollsPanel.classList.remove('hidden');
 
-        // Dynamically build grid of scrolls
         const listDiv = document.getElementById('scrolls-list');
-        listDiv.innerHTML = ''; // Clear
+        listDiv.innerHTML = '';
 
         Object.keys(this.sanctuary.monuments).forEach(key => {
             const data = this.sanctuary.monuments[key];
@@ -414,7 +405,6 @@ class Game {
             this.updateCamera(deltaTime);
 
         } else if (this.gameState === 'START') {
-            // Orbit camera slowly around the 3D Sanctuary garden (Center X=15, Y=0, Z=-10)
             const time = Date.now() * 0.0003;
             this.camera.position.set(
                 15.0 + Math.sin(time) * 6.5,
@@ -423,18 +413,14 @@ class Game {
             );
             this.camera.lookAt(15.0, 0.8, -10.0);
             
-            // Keep Sanctuary animations (such as diorama restorations) ticking on menu
             this.sanctuary.update(deltaTime);
         } else if (this.gameState === 'INTRO') {
-            // Smoothly translate camera from the Sanctuary menu to the runner track position (0, 3.5, 5)
             this.camera.position.lerp(this.introCamTargetPos, deltaTime * 3.5);
             
-            // Calculate a moving lookTarget to slide the camera's focus smoothly to the track
             const currentLook = new THREE.Vector3(15.0, 0.8, -10.0);
             currentLook.lerp(this.introCamTargetLook, deltaTime * 3.5);
             this.camera.lookAt(currentLook);
 
-            // Once camera slides close to position, trigger start run
             if (this.camera.position.distanceTo(this.introCamTargetPos) < 0.1) {
                 this.camera.position.copy(this.introCamTargetPos);
                 this.camera.lookAt(this.introCamTargetLook);
@@ -524,7 +510,7 @@ class Game {
     }
 
     /**
-     * Camera interpolator. Zooms out and upwards during peacock flight.
+     * Camera interpolator.
      */
     updateCamera(deltaTime) {
         let targetCamY = 3.5;
@@ -562,19 +548,28 @@ class Game {
         if (roundedScore > currentHigh) {
             localStorage.setItem('leela_highscore', roundedScore.toString());
             localStorage.setItem('leela_highname', nickname);
-            console.log(`[Save] New Local High Score: ${roundedScore} by ${nickname}`);
         }
 
         localStorage.setItem('leela_totalbutter', (currentButter + roundedButter).toString());
     }
 
     /**
-     * Sends local score to scoreboard server.
+     * Sends local score to the projected scoreboard server.
      */
     pushScoreToEventLeaderboard() {
         const nickname = this.nicknameInput.value.trim() || 'Pilgrim';
         const finalScoreVal = Math.floor(this.score);
-        console.log(`[Event Leaderboard] Score pushed for ${nickname}: ${finalScoreVal}`);
+        const finalButterVal = Math.floor(this.butter);
+
+        console.log(`[Leaderboard API] Pushing score: ${finalScoreVal} for ${nickname}`);
+        
+        if (this.socket) {
+            this.socket.emit('submit_score', {
+                name: nickname,
+                score: finalScoreVal,
+                butter: finalButterVal
+            });
+        }
     }
 }
 
